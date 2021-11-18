@@ -7,6 +7,20 @@ This is an application for the [M5Stack Core2](https://shop.m5stack.com/collecti
 
 
 
+## System architecture
+
+This project leverages the Cloud infrastructure provided by Medtronic. The picture below summarizes the architecture of the data communication path.
+
+The data acquired by the insulin pump is transmitted periodically to the patients phone running the *Minimed Mobile* app which works as a Cloud gateway. It forwards the data to the Carelink Cloud. A phone with the *Carelink Connect* app can then pull the data from the Cloud and display it.
+
+The *M5Stack Minimed Monitor* replaces the last piece in this communication chain. So it interfaces with the Carelink Cloud REST API (2) to receive the patients data and displays it on the M5Stack Core2s screen. It can be used in addition to the phone with *Carelink Connect* app.
+
+Since the M5Stack Core2 device has built-in Bluetooth capability, it is theoretically possible to pull the data directly from the pump via the BLE link (1). But the communication protocol for this is yet unknown and there is no open implementation for it.
+
+
+
+![minimed 780g comms](img/minimed-780g-comms.png)
+
 ## Features
 
 The *M5Stack Minimed Monitor* basically implements a clone of the Minimed 770G/780G insulin pump monitor screen. It reports the following status information in real time:
