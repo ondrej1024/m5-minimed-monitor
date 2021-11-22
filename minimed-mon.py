@@ -24,13 +24,14 @@
 #  Changelog:
 #
 #    28/06/2021 - Initial public release
+#    20/11/2021 - Handle DST (quick'n'dirty)
+#    21/11/2021 - Handle alarm notifications
 #
 #  TODO:
 #
-#  * History graph for recent glucose data
-#  * Alarm handling (sound and notification)
 #  * Configuration via config file on SD card or Wifi AP
 #  * Integration of Carelink Client
+#  * History graph for recent glucose data
 #  * Extensive error handling
 #
 #  Copyright 2021, Ondrej Wisniewski 
@@ -59,6 +60,7 @@ import ntptime
 import time
 import urequests
 
+VERSION = "0.2"
 
 # Configuration parameters
 # TODO: read from file
@@ -66,10 +68,10 @@ import urequests
 ### Replace below with your personal configuration ###
 
 PROXY_SERVER = "0.0.0.0" # The IP address where the carelink_client_proxy is running
-PROXY_PORT   = 8080      # The port where the carelink_client_proxy is listening
+PROXY_PORT   = 8081      # The port where the carelink_client_proxy is listening
 
 NTP_SERVER   = 'pool.ntp.org' # A public NTP server
-MY_TIMEZONE  = 2              # Time difference from GMT for your location
+MY_TIMEZONE  = 1              # Time difference from GMT for your location
 
 WIFI_SSID    = 'MY_SSID' # My Wifi SSID
 WIFI_PASS    = 'MY_PASS' # My Wifi password
@@ -77,18 +79,24 @@ WIFI_PASS    = 'MY_PASS' # My Wifi password
 ################# End of configuration ###############
 
 PROXY_URL    = "http://"+PROXY_SERVER+":"+str(PROXY_PORT)+"/carelink/nohistory"
+dstDelta    = 0
 
 # Gobal variables
 lastUpdateTm = time.localtime(0)
+lastAlarmId  = 0
+lastAlarmMsg = None
+runNtpsync        = False
+runTimeupdate     = False
+runPumpdataupdate = False
 
 # Init screen
 screen = M5Screen()
-screen.set_screen_brightness(40)
+screen.clean_screen()
 screen.set_screen_bg_color(0x000000)
+screen.set_screen_brightness(40)
 
 # Create screen 1
 scr1 = None
-screen.clean_screen(scr1)
 
 # Load images on screen 1
 imageBattery     = M5Img("res/mm_batt_unk.png", x=6, y=0, parent=scr1)
@@ -134,10 +142,12 @@ screen.set_screen_bg_color(0x000000,scr3)
 # TODO: check for errors
 wifiCfg.doConnect(WIFI_SSID, WIFI_PASS)
 
-# Init NTP client
-# TODO: check for errors
-ntp = ntptime.client(host=NTP_SERVER, timezone=MY_TIMEZONE)
 
+#################################################
+#
+# Button handlers
+#
+#################################################
 
 # Init button A
 def buttonA_wasPressed():
@@ -158,6 +168,12 @@ def buttonC_wasPressed():
 btnC.wasPressed(buttonC_wasPressed)
 
 
+#################################################
+#
+# Helper functions
+#
+#################################################
+
 def align_text(label,pos,y):
     if pos=="left":
         label.set_pos(x=0,y=y)
@@ -174,7 +190,7 @@ def time_delta(tm,ntp):
       if delta_min < 0:
          delta_min += 60
       #print("delta_min: "+str(delta_min))
-      delta_hour = ntp.hour() - (tm[3]+MY_TIMEZONE)
+      delta_hour = ntp.hour() - (tm[3]+MY_TIMEZONE+dstDelta)
       if delta_hour < 0:
          delta_hour += 24
       #print("delta_hour: "+str(delta_hour))
@@ -203,6 +219,7 @@ def reservoir_level(lvl):
 
 
 def time_to_calib_progress(ttc,sst,cst):
+   # TODO: check if screen 1 is active
    centerX = 112
    centerY = 17
    radius  = 16
@@ -246,10 +263,57 @@ def time_to_calib_progress(ttc,sst,cst):
       lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x000000,0x000000)
 
 
-# Timer callbacks
+def handle_alarm(lastAlarm):
+   global lastAlarmId
+   global lastAlarmMsg
+   try:
+        if lastAlarmId != lastAlarm["instanceId"]:
+            if lastAlarmId != 0:
+               # Show alarm message
+               msg = lastAlarm["messageId"].split('_')[2:]
+               if lastAlarmMsg != None:
+                  lastAlarmMsg.delete()
+                  lastAlarmMsg = None
+               lastAlarmMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None)
+               lastAlarmMsg.set_text(" ".join(msg))
+            
+               # Play alarm sound
+               if lastAlarm["type"] == "ALARM":
+                  sndfile = "res/sound_alarm.wav"
+               else:
+                  sndfile = "res/sound_alert.wav"
+               speaker.playWAV(sndfile, rate=22000)
+            
+            lastAlarmId = lastAlarm["instanceId"]
+   except:
+      pass
+        
+        
+#################################################
+#
+# Timer definitions
+#
+#################################################
+
 @timerSch.event('timer0')
 def ttimer0():
+   global runNtpsync
+   runNtpsync = True
+
+def handle_ntpsync():
+   global ntp
+   # Periodic timer: sync time via NTP
+   ntp = ntptime.client(host=NTP_SERVER, timezone=MY_TIMEZONE+dstDelta)
+
+
+@timerSch.event('timer1')
+def ttimer1():
+   global runTimeupdate
+   runTimeupdate = True
+
+def handle_timeupdate():
    global lastUpdateTm
+   
    # Update display time
    time = ("%02d:%02d") % (ntp.hour(),ntp.minute())
    labelTime.set_text(time)
@@ -258,85 +322,135 @@ def ttimer0():
    labelLastData.set_text(time_delta(lastUpdateTm,ntp))
    align_text(labelLastData,"center",218)
 
-   
-@timerSch.event('timer1')
-def ttimer1():
+
+@timerSch.event('timer2')
+def ttimer2():
+   global runPumpdataupdate
+   runPumpdataupdate = True
+
+def handle_pumpdataupdate():
    global lastUpdateTm
+   global dstDelta
    
    # Update Minimed data
+   # TODO: define timeout
+   # msgbox = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None)
+   # msgbox.set_text("1")
    r = urequests.request(method='GET', url=PROXY_URL, headers={})
+   #msgbox.delete()
    if r.status_code == 200:
+      # TODO: check conduit, medical device in range
+      
+      # Check for DST
+      dstDelta = 1 if r.json()["clientTimeZoneName"].lower().find("summer")>-1 else 0
+      
+      # Check for alarm notification
+      # msgbox.set_text("2")
+      handle_alarm(r.json()["lastAlarm"])
+      
       # Screen 1
+      # msgbox.set_text("3")
       lastUpdateTm = time.localtime(int(r.json()["lastConduitUpdateServerTime"]/1000))
+      # msgbox.set_text("4")
       imageBattery.set_img_src("res/mm_batt"+str(r.json()["medicalDeviceBatteryLevelPercent"])+".png")
+      # msgbox.set_text("5")
       imageReservoir.set_img_src("res/mm_tank"+str(reservoir_level(r.json()["reservoirRemainingUnits"]))+".png")
       #imageSensorConn.set_img_src()
+      # msgbox.set_text("6")
       time_to_calib_progress(r.json()["timeToNextCalibHours"],r.json()["sensorState"],r.json()["calibStatus"])
+      # msgbox.set_text("7")
       imageShield.set_img_src("res/mm_shield_"+r.json()["lastSGTrend"].lower()+".png")
+      # msgbox.set_text("8")
       lastSG = r.json()["lastSG"]["sg"]
       labelBglValue.set_text(str(lastSG) if lastSG > 0 else "--")
+      # msgbox.set_text("9")
       align_text(labelBglValue,"center",90)
+      # msgbox.set_text("10")
       labelActInsValue.set_text(str(r.json()["activeInsulin"]["amount"])+" U")
+      # msgbox.set_text("11")
       align_text(labelActInsValue,"right",173)
       
       # Screen 2
+      # msgbox.set_text("12")
       labelAboveTargetValue.set_text(str(r.json()["aboveHyperLimit"])+" %")
       labelInTargetValue.set_text(str(r.json()["timeInRange"])+" %")
       labelBelowTargetValue.set_text(str(r.json()["belowHypoLimit"])+" %")
       labelAverageSgValue.set_text(str(r.json()["averageSG"])+" mg/dl")
-
-
-@timerSch.event('timer2')
-def ttimer2():
-   # Periodic timer: check touch event
-   if touch.status():
-      screen.set_screen_brightness(100)
-      timerSch.run('timer3', TIMER3_PERIOD_S*1000, 0x01)
+   else:
+      # TODO: error handling
+      pass
+   # msgbox.delete()
 
 
 @timerSch.event('timer3')
 def ttimer3():
-   # One shot timer: reset screen brightness
-   screen.set_screen_brightness(40)
+   # Periodic timer: check touch event
+   handle_touchevent()
+
+def handle_touchevent():
+   global lastAlarmMsg
+   if touch.status():
+      if lastAlarmMsg != None:
+         lastAlarmMsg.delete() 
+         lastAlarmMsg = None
+      screen.set_screen_brightness(100)
+      timerSch.run('timer4', TIMER4_PERIOD_S*1000, 0x01)
 
 
 @timerSch.event('timer4')
 def ttimer4():
-   global ntp
-   # Periodic timer: sync time via NTP
-   ntp = ntptime.client(host=NTP_SERVER, timezone=MY_TIMEZONE)
+   # One shot timer: reset screen brightness
+   screen.set_screen_brightness(40)
 
 
 # Init timers
 
-# Timer 0: 1 sec (periodic)
-TIMER0_PERIOD_S = 1
-#timerSch.setTimer('timer0', TIMER0_PERIOD_S*1000, 0x00)
+# Timer 0: 1200 sec (periodic) // ntpsync
+TIMER0_PERIOD_S = 1200
 timerSch.run('timer0', TIMER0_PERIOD_S*1000, 0x00)
 
-# Timer 1: 60 sec (periodic)
-TIMER1_PERIOD_S = 60
-#timerSch.setTimer('timer1', TIMER1_PERIOD_S*1000, 0x00)
+# Timer 1: 1 sec (periodic) // timeupdate
+TIMER1_PERIOD_S = 1
 timerSch.run('timer1', TIMER1_PERIOD_S*1000, 0x00)
 
-# Timer 2: 0.1 sec (periodic)
-TIMER2_PERIOD_S = 0.1
-#timerSch.setTimer('timer2', TIMER2_PERIOD_S*1000, 0x00)
+# Timer 2: 60 sec (periodic) // pumpdataupdate
+TIMER2_PERIOD_S = 60
 timerSch.run('timer2', TIMER2_PERIOD_S*1000, 0x00)
 
-# Timer 3: 10 sec (one shot)
-TIMER3_PERIOD_S = 10
-#timerSch.setTimer('timer3', TIMER3_PERIOD_S*1000, 0x01)
+# Timer 3: 0.1 sec (periodic) // touchevent
+TIMER3_PERIOD_S = 0.1
+timerSch.run('timer3', TIMER3_PERIOD_S*1000, 0x00)
 
-# Timer 4: 1200 sec (periodic)
-TIMER4_PERIOD_S = 1200
-timerSch.run('timer4', TIMER4_PERIOD_S*1000, 0x00)
+# Timer 4: 10 sec (one shot) // reset screen brightness
+TIMER4_PERIOD_S = 10
 
+
+#################################################
+#
 # Init
+#
+#################################################
+
 ttimer0()
 ttimer1()
-ttimer4()
+ttimer2()
 
+
+#################################################
+#
 # Main loop
-while True:      
-   wait_ms(1000)
+#
+#################################################
+while True:
+   # Run handlers as requested
+   if runNtpsync:
+      handle_ntpsync()
+      runNtpsync = False
+   if runTimeupdate:
+      handle_timeupdate()
+      runTimeupdate = False
+   if runPumpdataupdate:
+      handle_pumpdataupdate()
+      runPumpdataupdate = False
+   
+   wait_ms(100)
