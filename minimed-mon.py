@@ -26,10 +26,10 @@
 #    28/06/2021 - Initial public release
 #    20/11/2021 - Handle DST (quick'n'dirty)
 #    21/11/2021 - Handle alarm notifications
+#    03/04/2022 - Add AP mode for configuration
 #
 #  TODO:
 #
-#  * Configuration via config file on SD card or Wifi AP
 #  * Integration of Carelink Client
 #  * History graph for recent glucose data
 #  * Extensive error handling
@@ -55,45 +55,269 @@
 from m5stack import *
 from m5stack_ui import *
 from uiflow import *
-import wifiCfg
 import ntptime
 import time
 import urequests
+import nvs
+import network
+import socket
+import machine
 
-VERSION = "0.2"
+VERSION = "0.3"
 
-# Configuration parameters
-# TODO: read from file
 
-### Replace below with your personal configuration ###
+# Default configuration parameters
+DEFAULT_NTP_SERVER = "pool.ntp.org"
+DEFAULT_TIME_ZONE  = "1"
+DEFAULT_PROXY_PORT = "8081"
 
-PROXY_SERVER = "0.0.0.0" # The IP address where the carelink_client_proxy is running
-PROXY_PORT   = 8081      # The port where the carelink_client_proxy is listening
-
-NTP_SERVER   = 'pool.ntp.org' # A public NTP server
-MY_TIMEZONE  = 1              # Time difference from GMT for your location
-
-WIFI_SSID    = 'MY_SSID' # My Wifi SSID
-WIFI_PASS    = 'MY_PASS' # My Wifi password
-
-################# End of configuration ###############
-
-PROXY_URL    = "http://"+PROXY_SERVER+":"+str(PROXY_PORT)+"/carelink/nohistory"
-dstDelta    = 0
+# Access point parameters
+API_URL     = "carelink/nohistory"
+AP_SSID     = "M5_MINIMED_MON"
+AP_ADDR     = "192.168.4.1"
 
 # Gobal variables
+dstDelta     = 0
 lastUpdateTm = time.localtime(0)
 lastAlarmId  = 0
 lastAlarmMsg = None
+lastApMsg    = None
 runNtpsync        = False
 runTimeupdate     = False
 runPumpdataupdate = False
+
+
+#################################################
+#
+# WIFI Access Point functions
+#
+#################################################
+
+def web_page_config(ntpserver,timezone,proxyport):
+   html =  '<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd"> \n \
+            <html><head><title>M5 Minimed Mon</title></head> \n \
+            <body><table style="text-align: left; width: 400px; background-color: #2196F3; font-family: Helvetica,Arial,sans-serif; font-weight: bold; color: white;" border="0" cellpadding="2" cellspacing="2"> \n \
+            <tbody><tr><td> \n \
+            <span style="vertical-align: top; font-size: 48px;">M5 Minimed Mon</span><br> \n \
+            <span style="font-size: 20px; color: rgb(204, 255, 255);">Configuration</span> \n \
+            </td></tr></tbody></table><br> \n \
+            <form action="/m5config"> \n \
+            <table style="text-align: left; width: 400px; background-color: white; font-family: Helvetica,Arial,sans-serif; font-weight: bold; font-size: 14px;" border="0" cellpadding="2" cellspacing="3"><tbody> \n \
+            <tr style="font-size: 18px; background-color: lightgrey"> \n \
+            <td style="width: 200px;">Wifi parameters</td> \n \
+            <tr style="vertical-align: top; background-color: rgb(230, 230, 255);"> \n \
+            <td style="width: 300px;">SSID<br><input type="text" id="fwifissid" name="fwifissid"></td> \n \
+            <tr style="vertical-align: top; background-color: rgb(230, 230, 255);"> \n \
+            <td style="width: 300px;">Password<br><input type="text" id="fwifipass" name="fwifipass"></td> \n \
+            </tbody></table><br> \n \
+            <table style="text-align: left; width: 400px; background-color: white; font-family: Helvetica,Arial,sans-serif; font-weight: bold; font-size: 14px;" border="0" cellpadding="2" cellspacing="3"><tbody> \n \
+            <tr style="font-size: 18px; background-color: lightgrey"> \n \
+            <td style="width: 200px;">Time and date</td> \n \
+            <tr style="vertical-align: top; background-color: rgb(230, 230, 255);"> \n \
+            <td style="width: 300px;">NTP server address<br><input type="text" id="fntpserver" name="fntpserver" value=%s></td> \n \
+            <tr style="vertical-align: top; background-color: rgb(230, 230, 255);"> \n \
+            <td style="width: 300px;">Time Zone (h)<br><input type="text" id="ftimezone" name="ftimezone" value=%s></td> \n \
+            </tbody></table><br> \n \
+            <table style="text-align: left; width: 400px; background-color: white; font-family: Helvetica,Arial,sans-serif; font-weight: bold; font-size: 14px;" border="0" cellpadding="2" cellspacing="3"><tbody> \n \
+            <tr style="font-size: 18px; background-color: lightgrey"> \n \
+            <td style="width: 200px;">Carelink proxy</td> \n \
+            <tr style="vertical-align: top; background-color: rgb(230, 230, 255);"> \n \
+            <td style="width: 300px;">IP address<br><input type="text" id="fproxyaddr" name="fproxyaddr"></td> \n \
+            <tr style="vertical-align: top; background-color: rgb(230, 230, 255);"> \n \
+            <td style="width: 300px;">Port<br><input type="text" id="fproxyport" name="fproxyport" value=%s></td> \n \
+            </tbody></table><br> \n \
+            <input type="submit" value="Save"> \n \
+            </form></body></html>' % (ntpserver,timezone,proxyport)
+   return html
+
+
+def web_page_success():
+   html =  '<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd"> \n \
+            <html><head><title>M5 Minimed Mon</title></head> \n \
+            <body><table style="text-align: left; width: 400px; background-color: #2196F3; font-family: Helvetica,Arial,sans-serif; font-weight: bold; color: white;" border="0" cellpadding="2" cellspacing="2"> \n \
+            <tbody><tr><td> \n \
+            <span style="vertical-align: top; font-size: 48px;">M5 Minimed Mon</span><br> \n \
+            <span style="font-size: 20px; color: rgb(204, 255, 255);">Configuration</span> \n \
+            </td></tr></tbody></table><br> \n \
+            <table style="text-align: left; width: 400px; background-color: rgb(230, 230, 255); font-family: Helvetica,Arial,sans-serif; font-weight: bold; font-size: 14px;" border="0" cellpadding="2" cellspacing="3"><tbody> \n \
+            <tr><td style="color: green; font-size: 18px;">Parameters updated successfully</td> \n \
+            <tr><td style="color: grey">Restarting device with new configuration ...</td> \n \
+            </tbody></table></body></html>'
+   return html
+
+
+def get_url_param(url,param):
+   try:
+      value = url.split("?")[1].split(param+"=")[1].split("&")[0]
+   except IndexError:
+      value = None
+   return value
+
+
+def do_ap_msg(msg):
+   global lastApMsg
+   if lastApMsg != None:
+      lastApMsg.delete()
+      lastApMsg = None
+   if msg:
+      lastApMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None)
+      lastApMsg.set_text(msg)
+      sndfile = "res/sound_alert.wav"
+      #speaker.playWAV(sndfile, rate=22000)
+
+
+def do_access_point(ntpserver,timezone,proxyport):
+   # Start access point
+   ap = network.WLAN(network.AP_IF)
+   ap.active(True)
+   ap.config(essid=AP_SSID)
+   ap.config(authmode=3, password='123456789')
+   ap.config(max_clients=1) 
+   do_ap_msg("Device configuration needed\nConnect to WIFI network %s" %(AP_SSID))
+   
+   # Wait for client to connect
+   while ap.isconnected() == False:
+       pass
+   do_ap_msg("WIFI connection established\nLoad address %s in web browser" % (AP_ADDR))
+   
+   # Get WIFI credentials via Web GUI
+   s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+   s.bind((AP_ADDR, 80))
+   s.listen(5)
+   
+   while True:
+      # Get request
+      conn,addr = s.accept()
+      request = str(conn.recv(1024))
+      rmethod  = request.split()[0]
+      rurl     = request.split()[1]
+      rheaders = request.split()[2]
+      print("request: %s\n" % (request))
+      #print("rmethod: %s\n" % (rmethod))
+      print("rurl: %s\n" % (rurl))
+      
+      # Send response headers
+      conn.send('HTTP/1.1 200 OK\n')
+      conn.send('Content-Type: text/html\n')
+      conn.send('Connection: close\n\n')
+
+      if rurl.find("/m5config") != -1:
+         # Get input parameters from request
+         wifissid  = get_url_param(rurl, "fwifissid")
+         wifipass  = get_url_param(rurl, "fwifipass")
+         ntpserver = get_url_param(rurl, "fntpserver")
+         timezone  = get_url_param(rurl, "ftimezone")
+         proxyaddr = get_url_param(rurl, "fproxyaddr")
+         proxyport = get_url_param(rurl, "fproxyport")
+         if wifissid  != None and wifissid  != "" and \
+            wifipass  != None and wifipass  != "" and \
+            ntpserver != None and ntpserver != "" and \
+            timezone  != None and timezone  != "" and \
+            proxyaddr != None and proxyaddr != "" and \
+            proxyport != None and proxyport != "":
+            
+            print("New configuration parameters received\n")
+            # Send reboot page
+            conn.sendall(web_page_success())
+            conn.close()
+            break
+
+      # Send setup page
+      conn.sendall(web_page_config(ntpserver,timezone,proxyport))
+      conn.close()
+            
+   # Write WIFI credentials to EEPROM
+   nvs.write_str('wifissid',  wifissid) 
+   wait_ms(100)
+   nvs.write_str('wifipass',  wifipass)
+   wait_ms(100)
+   nvs.write_str('ntpserver', ntpserver)
+   wait_ms(100)
+   nvs.write_str('timezone',  timezone)
+   wait_ms(100)
+   nvs.write_str('proxyaddr', proxyaddr)
+   wait_ms(100)
+   nvs.write_str('proxyport', proxyport)
+   wait_ms(100)
+   print("New configuration parameters stored in EEPROM\n")
+   print("wifissid: %s, wifipass: %s, proxyaddr: %s, proxyport: %s, ntpserver: %s, timezone: %s\n" % (wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone))
+   do_ap_msg("New configuration parameters stored in EEPROM\nResetting device ...")
+
+   # Reset device
+   wait_ms(8000)
+   machine.reset()
+
+
+#################################################
+#
+# Access configuration parameters
+#
+#################################################
+
+def read_config():
+   # Try to read config from EEPROM
+   wifissid  = nvs.read_str('wifissid')
+   wifipass  = nvs.read_str('wifipass')
+   ntpserver = nvs.read_str('ntpserver')
+   timezone  = nvs.read_str('timezone')
+   proxyaddr = nvs.read_str('proxyaddr')
+   proxyport = nvs.read_str('proxyport')
+
+   # Set default values
+   if proxyport == None:
+      proxyport = DEFAULT_PROXY_PORT
+   if ntpserver == None:
+      ntpserver = DEFAULT_NTP_SERVER
+   if timezone == None:
+      timezone  = DEFAULT_TIME_ZONE
+
+   # To delete a key/value pair use the following command
+   # nvs.esp32.nvs_erase(<key>)
+
+   if wifissid == None or wifipass == None or proxyaddr == None:
+      print("Needed configuration parameters not found in EEPROM\n")
+      # Start access point for configuration
+      do_access_point(ntpserver,timezone,proxyport)
+
+   return (wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone)
+
+
+#################################################
+#
+# Connect to network
+#
+#################################################
+
+def wlan_connect(wifissid, wifipass, ntpserver, timezone, proxyport):
+   # Try to connect to WIFI network
+   wlan = network.WLAN(network.STA_IF)
+   wlan.active(True)
+   wlan.connect(wifissid, wifipass)
+   ctimeout=0
+   while not wlan.isconnected():
+      wait_ms(1000)
+      ctimeout += 1
+      if ctimeout > 5:
+         break
+   if not wlan.isconnected():
+      wlan.active(False)
+      print("Failed to connect to WIFI network %s\n" % (wifissid))
+      # Start access point for configuration
+      do_access_point(ntpserver,timezone,proxyport)
+
 
 # Init screen
 screen = M5Screen()
 screen.clean_screen()
 screen.set_screen_bg_color(0x000000)
 screen.set_screen_brightness(40)
+
+# Read config from EEPROM
+wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone = read_config()
+print("wifissid: %s, wifipass: %s, proxyaddr: %s, proxyport: %s, ntpserver: %s, timezone: %s\n" % (wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone))
+
+# Connect to network
+wlan_connect(wifissid, wifipass, ntpserver, timezone, proxyport)
 
 # Create screen 1
 scr1 = None
@@ -138,10 +362,6 @@ screen.set_screen_bg_color(0x000000,scr3)
 # Init labels on screen 3
 # TODO
 
-# Init Wifi connection
-# TODO: check for errors
-wifiCfg.doConnect(WIFI_SSID, WIFI_PASS)
-
 
 #################################################
 #
@@ -183,14 +403,14 @@ def align_text(label,pos,y):
         label.set_pos(x=320-label.get_width(),y=y)
 
 
-def time_delta(tm,ntp):
+def time_delta(tm,ntp,timezone):
    
    if tm != None and ntp != None:
       delta_min  = ntp.minute() - tm[4]
       if delta_min < 0:
          delta_min += 60
       #print("delta_min: "+str(delta_min))
-      delta_hour = ntp.hour() - (tm[3]+MY_TIMEZONE+dstDelta)
+      delta_hour = ntp.hour() - (tm[3]+int(timezone)+dstDelta)
       if delta_hour < 0:
          delta_hour += 24
       #print("delta_hour: "+str(delta_hour))
@@ -300,10 +520,10 @@ def ttimer0():
    global runNtpsync
    runNtpsync = True
 
-def handle_ntpsync():
+def handle_ntpsync(ntpserver, timezone):
    global ntp
    # Periodic timer: sync time via NTP
-   ntp = ntptime.client(host=NTP_SERVER, timezone=MY_TIMEZONE+dstDelta)
+   return ntptime.client(host=ntpserver, timezone=int(timezone)+dstDelta)
 
 
 @timerSch.event('timer1')
@@ -311,7 +531,7 @@ def ttimer1():
    global runTimeupdate
    runTimeupdate = True
 
-def handle_timeupdate():
+def handle_timeupdate(ntp, timezone):
    global lastUpdateTm
    
    # Update display time
@@ -319,7 +539,7 @@ def handle_timeupdate():
    labelTime.set_text(time)
    align_text(labelTime,"right",0)
    
-   labelLastData.set_text(time_delta(lastUpdateTm,ntp))
+   labelLastData.set_text(time_delta(lastUpdateTm,ntp,timezone))
    align_text(labelLastData,"center",218)
 
 
@@ -328,17 +548,21 @@ def ttimer2():
    global runPumpdataupdate
    runPumpdataupdate = True
 
-def handle_pumpdataupdate():
+def handle_pumpdataupdate(proxyaddr, proxyport):
    global lastUpdateTm
    global dstDelta
-   
+   proxy_url = "http://%s:%s/%s" % (proxyaddr, proxyport, API_URL)
+
    # Update Minimed data
    # TODO: define timeout
    # msgbox = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None)
    # msgbox.set_text("1")
-   r = urequests.request(method='GET', url=PROXY_URL, headers={})
+   try:
+       r = urequests.request(method='GET', url=proxy_url, headers={})
+   except OSError:
+       r = None
    #msgbox.delete()
-   if r.status_code == 200:
+   if r != None and r.status_code == 200:
       # TODO: check conduit, medical device in range
       
       # Check for DST
@@ -403,6 +627,12 @@ def ttimer4():
    screen.set_screen_brightness(40)
 
 
+#################################################
+#
+# Init
+#
+#################################################
+
 # Init timers
 
 # Timer 0: 1200 sec (periodic) // ntpsync
@@ -424,13 +654,7 @@ timerSch.run('timer3', TIMER3_PERIOD_S*1000, 0x00)
 # Timer 4: 10 sec (one shot) // reset screen brightness
 TIMER4_PERIOD_S = 10
 
-
-#################################################
-#
-# Init
-#
-#################################################
-
+# Start timers
 ttimer0()
 ttimer1()
 ttimer2()
@@ -444,13 +668,13 @@ ttimer2()
 while True:
    # Run handlers as requested
    if runNtpsync:
-      handle_ntpsync()
+      ntp = handle_ntpsync(ntpserver, timezone)
       runNtpsync = False
    if runTimeupdate:
-      handle_timeupdate()
+      handle_timeupdate(ntp, timezone)
       runTimeupdate = False
    if runPumpdataupdate:
-      handle_pumpdataupdate()
+      handle_pumpdataupdate(proxyaddr, proxyport)
       runPumpdataupdate = False
    
    wait_ms(100)
