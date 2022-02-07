@@ -27,6 +27,7 @@
 #    20/11/2021 - Handle DST (quick'n'dirty)
 #    21/11/2021 - Handle alarm notifications
 #    03/04/2022 - Add AP mode for configuration
+#    01/02/2022 - Improve error handling
 #
 #  TODO:
 #
@@ -34,7 +35,7 @@
 #  * History graph for recent glucose data
 #  * Extensive error handling
 #
-#  Copyright 2021, Ondrej Wisniewski 
+#  Copyright 2021-2022, Ondrej Wisniewski 
 #  
 #  
 #  This program is free software: you can redistribute it and/or modify
@@ -306,6 +307,14 @@ def wlan_connect(wifissid, wifipass, ntpserver, timezone, proxyport):
       do_access_point(ntpserver,timezone,proxyport)
 
 
+# Startup message
+lcd.clear()
+lcd.font(lcd.FONT_DejaVu24)
+lcd.setTextColor(lcd.WHITE)
+lcd.println("Minimed Mon, ver %s" % (VERSION))
+print("Minimed Mon, ver %s" % (VERSION))
+wait_ms(3000)
+
 # Init screen
 screen = M5Screen()
 screen.clean_screen()
@@ -521,9 +530,12 @@ def ttimer0():
    runNtpsync = True
 
 def handle_ntpsync(ntpserver, timezone):
-   global ntp
    # Periodic timer: sync time via NTP
-   return ntptime.client(host=ntpserver, timezone=int(timezone)+dstDelta)
+   try:
+      ntp = ntptime.client(host=ntpserver, timezone=int(timezone)+dstDelta)
+   except:
+      ntp = None
+   return ntp
 
 
 @timerSch.event('timer1')
@@ -532,15 +544,15 @@ def ttimer1():
    runTimeupdate = True
 
 def handle_timeupdate(ntp, timezone):
-   global lastUpdateTm
-   
-   # Update display time
-   time = ("%02d:%02d") % (ntp.hour(),ntp.minute())
-   labelTime.set_text(time)
-   align_text(labelTime,"right",0)
-   
-   labelLastData.set_text(time_delta(lastUpdateTm,ntp,timezone))
-   align_text(labelLastData,"center",218)
+   try:
+      # Update display time
+      time = ("%02d:%02d") % (ntp.hour(),ntp.minute())
+      labelTime.set_text(time)
+      align_text(labelTime,"right",0)
+      labelLastData.set_text(time_delta(lastUpdateTm,ntp,timezone))
+      align_text(labelLastData,"center",218)
+   except:
+      pass
 
 
 @timerSch.event('timer2')
@@ -554,55 +566,65 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
    proxy_url = "http://%s:%s/%s" % (proxyaddr, proxyport, API_URL)
 
    # Update Minimed data
-   # TODO: define timeout
    # msgbox = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None)
    # msgbox.set_text("1")
+   # Handle request timeout
+   timerSch.run('timer5', TIMER5_PERIOD_S*1000, 0x01)
    try:
-       r = urequests.request(method='GET', url=proxy_url, headers={})
+      # Get Minimed data from proxy 
+      r = urequests.request(method='GET', url=proxy_url, headers={})
    except OSError:
-       r = None
+      r = None
+   timerSch.stop('timer5')
    #msgbox.delete()
    if r != None and r.status_code == 200:
       # TODO: check conduit, medical device in range
-      
-      # Check for DST
-      dstDelta = 1 if r.json()["clientTimeZoneName"].lower().find("summer")>-1 else 0
-      
-      # Check for alarm notification
-      # msgbox.set_text("2")
-      handle_alarm(r.json()["lastAlarm"])
-      
-      # Screen 1
-      # msgbox.set_text("3")
-      lastUpdateTm = time.localtime(int(r.json()["lastConduitUpdateServerTime"]/1000))
-      # msgbox.set_text("4")
-      imageBattery.set_img_src("res/mm_batt"+str(r.json()["medicalDeviceBatteryLevelPercent"])+".png")
-      # msgbox.set_text("5")
-      imageReservoir.set_img_src("res/mm_tank"+str(reservoir_level(r.json()["reservoirRemainingUnits"]))+".png")
-      #imageSensorConn.set_img_src()
-      # msgbox.set_text("6")
-      time_to_calib_progress(r.json()["timeToNextCalibHours"],r.json()["sensorState"],r.json()["calibStatus"])
-      # msgbox.set_text("7")
-      imageShield.set_img_src("res/mm_shield_"+r.json()["lastSGTrend"].lower()+".png")
-      # msgbox.set_text("8")
-      lastSG = r.json()["lastSG"]["sg"]
-      labelBglValue.set_text(str(lastSG) if lastSG > 0 else "--")
-      # msgbox.set_text("9")
-      align_text(labelBglValue,"center",90)
-      # msgbox.set_text("10")
-      labelActInsValue.set_text(str(r.json()["activeInsulin"]["amount"])+" U")
-      # msgbox.set_text("11")
-      align_text(labelActInsValue,"right",173)
+
+      try:
+         # Check for DST
+         dstDelta = 1 if r.json()["clientTimeZoneName"].lower().find("summer")>-1 else 0
+         
+         # Check for alarm notification
+         # msgbox.set_text("2")
+         handle_alarm(r.json()["lastAlarm"])
+         
+         # Screen 1
+         # msgbox.set_text("3")
+         lastUpdateTm = time.localtime(int(r.json()["lastConduitUpdateServerTime"]/1000))
+         # msgbox.set_text("4")
+         imageBattery.set_img_src("res/mm_batt"+str(r.json()["medicalDeviceBatteryLevelPercent"])+".png")
+         # msgbox.set_text("5")
+         imageReservoir.set_img_src("res/mm_tank"+str(reservoir_level(r.json()["reservoirRemainingUnits"]))+".png")
+         #imageSensorConn.set_img_src()
+         # msgbox.set_text("6")
+         time_to_calib_progress(r.json()["timeToNextCalibHours"],r.json()["sensorState"],r.json()["calibStatus"])
+         # msgbox.set_text("7")
+         imageShield.set_img_src("res/mm_shield_"+r.json()["lastSGTrend"].lower()+".png")
+         # msgbox.set_text("8")
+         lastSG = r.json()["lastSG"]["sg"]
+         labelBglValue.set_text(str(lastSG) if lastSG > 0 else "--")
+         # msgbox.set_text("9")
+         align_text(labelBglValue,"center",90)
+         # msgbox.set_text("10")
+         labelActInsValue.set_text(str(r.json()["activeInsulin"]["amount"])+" U")
+         # msgbox.set_text("11")
+         align_text(labelActInsValue,"right",173)
+      except Exception as e:
+         #msgbox = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None)
+         #msgbox.set_text(str(e))
+         #raise
+         pass
       
       # Screen 2
       # msgbox.set_text("12")
-      labelAboveTargetValue.set_text(str(r.json()["aboveHyperLimit"])+" %")
-      labelInTargetValue.set_text(str(r.json()["timeInRange"])+" %")
-      labelBelowTargetValue.set_text(str(r.json()["belowHypoLimit"])+" %")
-      labelAverageSgValue.set_text(str(r.json()["averageSG"])+" mg/dl")
-   else:
-      # TODO: error handling
-      pass
+      try:
+         labelAboveTargetValue.set_text(str(r.json()["aboveHyperLimit"])+" %")
+         labelInTargetValue.set_text(str(r.json()["timeInRange"])+" %")
+         labelBelowTargetValue.set_text(str(r.json()["belowHypoLimit"])+" %")
+         labelAverageSgValue.set_text(str(r.json()["averageSG"])+" mg/dl")
+      except Exception as e:
+         pass
+   
    # msgbox.delete()
 
 
@@ -627,11 +649,32 @@ def ttimer4():
    screen.set_screen_brightness(40)
 
 
+@timerSch.event('timer5')
+def ttimer5():
+   # One shot timer: urequests watchdog
+   # TODO: should reset the device to recover
+   msgbox = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None)
+   msgbox.set_text("ERROR: urequests is stuck, reset device")
+
+
 #################################################
 #
 # Init
 #
 #################################################
+
+ntp = None
+msgbox = None
+while ntp == None:
+   wait_ms(1000)
+   ntp = handle_ntpsync(ntpserver, timezone)
+   if ntp == None and msgbox == None:
+      msgbox = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None)
+      msgbox.set_text("Trying to synch time and date ...")
+if msgbox != None:
+   msgbox.delete()
+
+print("Time and date successfully synched")
 
 # Init timers
 
@@ -639,26 +682,28 @@ def ttimer4():
 TIMER0_PERIOD_S = 1200
 timerSch.run('timer0', TIMER0_PERIOD_S*1000, 0x00)
 
-# Timer 1: 1 sec (periodic) // timeupdate
-TIMER1_PERIOD_S = 1
+# Timer 1: 10 sec (periodic) // timeupdate
+TIMER1_PERIOD_S = 10
 timerSch.run('timer1', TIMER1_PERIOD_S*1000, 0x00)
 
 # Timer 2: 60 sec (periodic) // pumpdataupdate
 TIMER2_PERIOD_S = 60
 timerSch.run('timer2', TIMER2_PERIOD_S*1000, 0x00)
 
-# Timer 3: 0.1 sec (periodic) // touchevent
-TIMER3_PERIOD_S = 0.1
-timerSch.run('timer3', TIMER3_PERIOD_S*1000, 0x00)
+# Timer 3: 0.2 sec (periodic) // touchevent
+TIMER3_PERIOD_S = 0.2
+timerSch.run('timer3', int(TIMER3_PERIOD_S*1000), 0x00)
 
 # Timer 4: 10 sec (one shot) // reset screen brightness
 TIMER4_PERIOD_S = 10
 
-# Start timers
-ttimer0()
+# Timer 5: 30 sec (one shot) // urequest watchdog
+TIMER5_PERIOD_S = 60
+
+# Run some timer functions immediately to init
+#ttimer0()
 ttimer1()
 ttimer2()
-
 
 #################################################
 #
@@ -668,7 +713,7 @@ ttimer2()
 while True:
    # Run handlers as requested
    if runNtpsync:
-      ntp = handle_ntpsync(ntpserver, timezone)
+      handle_ntpsync(ntpserver, timezone)
       runNtpsync = False
    if runTimeupdate:
       handle_timeupdate(ntp, timezone)
@@ -677,4 +722,4 @@ while True:
       handle_pumpdataupdate(proxyaddr, proxyport)
       runPumpdataupdate = False
    
-   wait_ms(100)
+   wait_ms(1000)
