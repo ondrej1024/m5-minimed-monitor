@@ -1,5 +1,7 @@
 # M5Stack Minimed Monitor
-This is an application for the [M5Stack Core2](https://shop.m5stack.com/collections/m5-core/products/m5stack-core2-esp32-iot-development-kit?variant=35960244109476) device. It implements a remote monitor for the Medtronic [Minimed 770G/780G](https://www.medtronicdiabetes.com/products/minimed-770g-insulin-pump-system)  insulin pump system to be used by caregivers of  Type-1 Diabetes patients wearing the pump.
+This is an application for the [M5Stack Core2](https://shop.m5stack.com/collections/m5-core/products/m5stack-core2-esp32-iot-development-kit?variant=35960244109476) device. It implements a remote monitor for the Medtronic [Minimed 770G/780G](https://www.medtronicdiabetes.com/products/minimed-770g-insulin-pump-system)  insulin pump system to be used by caregivers of a Type-1 Diabetes patient wearing the pump.
+
+Fits in nicely on your bedside table or on a shelf in the living room and lets you see all important pump and sensor data at a glance whenever you need it.
 
 
 
@@ -38,6 +40,13 @@ A third screen will display the glucose data history graph (to do).
 
 
 
+Other features:
+
+* Pump alarm handling (sound and notification)
+* Device configuration via Wifi AP
+
+
+
 ## Project Status
 
 This is a developer version, with a lot of pieces still under construction. However I am using it on a daily basis and the functionality already implemented works reliably for me.
@@ -51,10 +60,8 @@ Any contributions are welcome.
 ## Todo list
 
 * History graph for recent glucose data
-* Alarm handling (sound and notification)
-* Configuration via config file on SD card or Wifi AP
-* Integration of Carelink client
 * Extensive error handling
+* Integration of Carelink client
 
 
 
