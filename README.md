@@ -38,6 +38,13 @@ A third screen will display the glucose data history graph (to do).
 
 
 
+Other features:
+
+* Pump alarm handling (sound and notification)
+* Device configuration via Wifi AP
+
+
+
 ## Project Status
 
 This is a developer version, with a lot of pieces still under construction. However I am using it on a daily basis and the functionality already implemented works reliably for me.
@@ -51,10 +58,8 @@ Any contributions are welcome.
 ## Todo list
 
 * History graph for recent glucose data
-* Alarm handling (sound and notification)
-* Configuration via config file on SD card or Wifi AP
-* Integration of Carelink client
 * Extensive error handling
+* Integration of Carelink client
 
 
 
