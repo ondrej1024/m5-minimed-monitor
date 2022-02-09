@@ -501,8 +501,8 @@ def handle_alarm(lastAlarm):
             # Show alarm message
             msg = lastAlarm["messageId"].split('_')[2:]
             if lastAlarmMsg != None:
-               lastAlarmMsg = None
                lastAlarmMsg.delete()
+               lastAlarmMsg = None
             lastAlarmMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None)
             lastAlarmMsg.set_text(" ".join(msg))
             
