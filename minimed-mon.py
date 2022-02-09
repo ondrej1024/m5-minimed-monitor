@@ -164,7 +164,7 @@ def do_ap_msg(msg):
       lastApMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None)
       lastApMsg.set_text(msg)
       sndfile = "res/sound_alert.wav"
-      #speaker.playWAV(sndfile, rate=22000)
+      speaker.playWAV(sndfile, rate=22000)
 
 
 def do_access_point(ntpserver,timezone,proxyport):
@@ -496,24 +496,23 @@ def handle_alarm(lastAlarm):
    global lastAlarmId
    global lastAlarmMsg
    try:
-        if lastAlarmId != lastAlarm["instanceId"]:
-            if lastAlarmId != 0:
-               # Show alarm message
-               msg = lastAlarm["messageId"].split('_')[2:]
-               if lastAlarmMsg != None:
-                  lastAlarmMsg.delete()
-                  lastAlarmMsg = None
-               lastAlarmMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None)
-               lastAlarmMsg.set_text(" ".join(msg))
+      if lastAlarmId != lastAlarm["instanceId"]:
+         if lastAlarmId != 0:
+            # Show alarm message
+            msg = lastAlarm["messageId"].split('_')[2:]
+            if lastAlarmMsg != None:
+               lastAlarmMsg = None
+               lastAlarmMsg.delete()
+            lastAlarmMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None)
+            lastAlarmMsg.set_text(" ".join(msg))
             
-               # Play alarm sound
-               if lastAlarm["type"] == "ALARM":
-                  sndfile = "res/sound_alarm.wav"
-               else:
-                  sndfile = "res/sound_alert.wav"
-               speaker.playWAV(sndfile, rate=22000)
-            
-            lastAlarmId = lastAlarm["instanceId"]
+            # Play alarm sound
+            if lastAlarm["kind"] == "ALARM":
+               sndfile = "res/sound_alarm.wav"
+            else:
+               sndfile = "res/sound_alert.wav"
+            speaker.playWAV(sndfile, rate=22000)
+         lastAlarmId = lastAlarm["instanceId"]
    except:
       pass
         
