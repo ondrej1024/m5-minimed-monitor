@@ -28,12 +28,12 @@
 #    21/11/2021 - Handle alarm notifications
 #    03/04/2022 - Add AP mode for configuration
 #    01/02/2022 - Improve error handling
+#    23/02/2022 - Handle pump banner, shield state, device in range
 #
 #  TODO:
 #
 #  * Integration of Carelink Client
 #  * History graph for recent glucose data
-#  * Extensive error handling
 #
 #  Copyright 2021-2022, Ondrej Wisniewski 
 #  
@@ -64,7 +64,7 @@ import network
 import socket
 import machine
 
-VERSION = "0.3"
+VERSION = "0.4"
 
 
 # Default configuration parameters
@@ -82,6 +82,7 @@ dstDelta     = 0
 lastUpdateTm = time.localtime(0)
 lastAlarmId  = 0
 lastAlarmMsg = None
+lastErrorMsg = None
 lastApMsg    = None
 runNtpsync        = False
 runTimeupdate     = False
@@ -334,10 +335,10 @@ scr1 = None
 # Load images on screen 1
 imageBattery     = M5Img("res/mm_batt_unk.png", x=6, y=0, parent=scr1)
 imageReservoir   = M5Img("res/mm_tank_unk.png", x=40, y=0, parent=scr1)
-imageSensorConn  = M5Img("res/mm_sensor_connection_ok.png", x=68, y=0, parent=scr1)
+imageSensorConn  = M5Img("res/mm_sensor_connection_nok.png", x=68, y=0, parent=scr1)
 imageDrop        = M5Img("res/mm_drop_unk.png", x=105, y=8, parent=scr1)
-#imageDrop        = M5Img("res/mm_drop_red.png", x=100, y=0, parent=scr1)
 imageShield      = M5Img("res/mm_shield_none.png", x=65, y=33, parent=scr1)
+imageBanner      = M5Img("res/mm_banner_delivery_suspend.png", x=40, y=145, parent=scr1)
 
 # Init labels on screen 1
 labelBglValue    = M5Label('--', x=140, y=90, color=0xffffff, font=FONT_MONT_48, parent=scr1)
@@ -502,7 +503,6 @@ def handle_alarm(lastAlarm):
             msg = lastAlarm["messageId"].split('_')[2:]
             if lastAlarmMsg != None:
                lastAlarmMsg.delete()
-               lastAlarmMsg = None
             lastAlarmMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None)
             lastAlarmMsg.set_text(" ".join(msg))
             
@@ -560,72 +560,87 @@ def ttimer2():
    runPumpdataupdate = True
 
 def handle_pumpdataupdate(proxyaddr, proxyport):
+   global lastErrorMsg
    global lastUpdateTm
    global dstDelta
    proxy_url = "http://%s:%s/%s" % (proxyaddr, proxyport, API_URL)
 
    # Update Minimed data
-   # msgbox = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None)
-   # msgbox.set_text("1")
-   # Handle request timeout
+   
+   # Get Minimed data from proxy via API
+   # (urequests does not handle timeouts so we do this with an external timer)
    timerSch.run('timer5', TIMER5_PERIOD_S*1000, 0x01)
    try:
-      # Get Minimed data from proxy 
       r = urequests.request(method='GET', url=proxy_url, headers={})
    except OSError:
       r = None
    timerSch.stop('timer5')
-   #msgbox.delete()
+   if lastErrorMsg != None:
+      lastErrorMsg.delete()
+      lastErrorMsg = None
+   
    if r != None and r.status_code == 200:
-      # TODO: check conduit, medical device in range
-
       try:
+         lastUpdateTm = time.localtime(int(r.json()["lastConduitUpdateServerTime"]/1000))
+         
          # Check for DST
          dstDelta = 1 if r.json()["clientTimeZoneName"].lower().find("summer")>-1 else 0
          
          # Check for alarm notification
-         # msgbox.set_text("2")
          handle_alarm(r.json()["lastAlarm"])
          
-         # Screen 1
-         # msgbox.set_text("3")
-         lastUpdateTm = time.localtime(int(r.json()["lastConduitUpdateServerTime"]/1000))
-         # msgbox.set_text("4")
-         imageBattery.set_img_src("res/mm_batt"+str(r.json()["medicalDeviceBatteryLevelPercent"])+".png")
-         # msgbox.set_text("5")
-         imageReservoir.set_img_src("res/mm_tank"+str(reservoir_level(r.json()["reservoirRemainingUnits"]))+".png")
-         #imageSensorConn.set_img_src()
-         # msgbox.set_text("6")
+         # Check conduit, medical device in range
+         haveData = r.json()["conduitInRange"] and r.json()["conduitMedicalDeviceInRange"]
+
+         ##### Screen 1 #####
+         
+         if haveData:
+            imageBattery.set_img_src("res/mm_batt"+str(r.json()["medicalDeviceBatteryLevelPercent"])+".png")
+            imageReservoir.set_img_src("res/mm_tank"+str(reservoir_level(r.json()["reservoirRemainingUnits"]))+".png")
+         else:
+            imageBattery.set_img_src("res/mm_batt_unk.png")
+            imageReservoir.set_img_src("res/mm_tank_unk.png")
+         
+         if r.json()["conduitSensorInRange"]:
+            imageSensorConn.set_img_src("res/mm_sensor_connection_ok.png")
+         else:
+            imageSensorConn.set_img_src("res/mm_sensor_connection_nok.png")
+         
          time_to_calib_progress(r.json()["timeToNextCalibHours"],r.json()["sensorState"],r.json()["calibStatus"])
-         # msgbox.set_text("7")
-         imageShield.set_img_src("res/mm_shield_"+r.json()["lastSGTrend"].lower()+".png")
-         # msgbox.set_text("8")
+         
+         if not haveData or r.json()["therapyAlgorithmState"]["autoModeShieldState"] == "FEATURE_OFF":
+            imageShield.set_hidden(True)
+         else:
+            imageShield.set_img_src("res/mm_shield_"+r.json()["lastSGTrend"].lower()+".png")
+            imageShield.set_hidden(False)
          lastSG = r.json()["lastSG"]["sg"]
          labelBglValue.set_text(str(lastSG) if lastSG > 0 else "--")
-         # msgbox.set_text("9")
          align_text(labelBglValue,"center",90)
-         # msgbox.set_text("10")
-         labelActInsValue.set_text(str(r.json()["activeInsulin"]["amount"])+" U")
-         # msgbox.set_text("11")
+         
+         if haveData:
+            labelActInsValue.set_text(str(r.json()["activeInsulin"]["amount"])+" U")
+         else:
+            labelActInsValue.set_text("-- U")
          align_text(labelActInsValue,"right",173)
-      except Exception as e:
-         #msgbox = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None)
-         #msgbox.set_text(str(e))
-         #raise
+      except:
          pass
       
-      # Screen 2
-      # msgbox.set_text("12")
+      try:
+         pumpBanner = r.json()["pumpBannerState"][0]["type"]
+         imageBanner.set_img_src("res/mm_banner_"+pumpBanner.lower()+".png")
+         imageBanner.set_hidden(False)
+      except:
+         imageBanner.set_hidden(True)
+         
+      ##### Screen 2 #####
       try:
          labelAboveTargetValue.set_text(str(r.json()["aboveHyperLimit"])+" %")
          labelInTargetValue.set_text(str(r.json()["timeInRange"])+" %")
          labelBelowTargetValue.set_text(str(r.json()["belowHypoLimit"])+" %")
          labelAverageSgValue.set_text(str(r.json()["averageSG"])+" mg/dl")
-      except Exception as e:
+      except:
          pass
    
-   # msgbox.delete()
-
 
 @timerSch.event('timer3')
 def ttimer3():
@@ -651,9 +666,13 @@ def ttimer4():
 @timerSch.event('timer5')
 def ttimer5():
    # One shot timer: urequests watchdog
-   # TODO: should reset the device to recover
-   msgbox = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None)
-   msgbox.set_text("ERROR: urequests is stuck, reset device")
+   # Just issue a warning nessage
+   global lastErrorMsg
+   if lastErrorMsg != None:
+      lastErrorMsg.delete()
+      lastErrorMsg = None
+   lastErrorMsg = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None)
+   lastErrorMsg.set_text("ERROR: urequests is stuck, reset device")
 
 
 #################################################
@@ -696,13 +715,13 @@ timerSch.run('timer3', int(TIMER3_PERIOD_S*1000), 0x00)
 # Timer 4: 10 sec (one shot) // reset screen brightness
 TIMER4_PERIOD_S = 10
 
-# Timer 5: 30 sec (one shot) // urequest watchdog
+# Timer 5: 60 sec (one shot) // urequest watchdog
 TIMER5_PERIOD_S = 60
 
 # Run some timer functions immediately to init
-#ttimer0()
 ttimer1()
 ttimer2()
+
 
 #################################################
 #
