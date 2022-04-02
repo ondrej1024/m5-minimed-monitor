@@ -29,6 +29,7 @@
 #    03/04/2022 - Add AP mode for configuration
 #    01/02/2022 - Improve error handling
 #    23/02/2022 - Handle pump banner, shield state, device in range
+#    27/03/2022 - Add sensor age icon
 #
 #  TODO:
 #
@@ -64,7 +65,7 @@ import network
 import socket
 import machine
 
-VERSION = "0.4"
+VERSION = "0.5"
 
 
 # Default configuration parameters
@@ -78,7 +79,7 @@ AP_SSID     = "M5_MINIMED_MON"
 AP_ADDR     = "192.168.4.1"
 
 # Gobal variables
-dstDelta     = 0
+dstDelta     = 1
 lastUpdateTm = time.localtime(0)
 lastAlarmId  = 0
 lastAlarmMsg = None
@@ -337,6 +338,7 @@ imageBattery     = M5Img("res/mm_batt_unk.png", x=6, y=0, parent=scr1)
 imageReservoir   = M5Img("res/mm_tank_unk.png", x=40, y=0, parent=scr1)
 imageSensorConn  = M5Img("res/mm_sensor_connection_nok.png", x=68, y=0, parent=scr1)
 imageDrop        = M5Img("res/mm_drop_unk.png", x=105, y=8, parent=scr1)
+imageSage        = M5Img("res/mm_sage_unk.png", x=135, y=0, parent=scr1)
 imageShield      = M5Img("res/mm_shield_none.png", x=65, y=33, parent=scr1)
 imageBanner      = M5Img("res/mm_banner_delivery_suspend.png", x=40, y=145, parent=scr1)
 
@@ -347,6 +349,7 @@ labelActInsValue = M5Label('-- U', x=261, y=173, color=0xffffff, font=FONT_MONT_
 labelActIns      = M5Label('Act Insulin', x=231, y=200, color=0xffffff, font=FONT_MONT_16, parent=scr1)
 labelTime        = M5Label('--:--', x=250, y=0, color=0xffffff, font=FONT_MONT_28, parent=scr1)
 labelLastData    = M5Label('--', x=120, y=218, color=0xffffff, font=FONT_MONT_20, parent=scr1)
+labelSage        = M5Label('', x=144, y=8, color=0xffffff, font=FONT_MONT_14, parent=scr1)
 
 # Create screen 2
 scr2 = screen.get_new_screen()
@@ -441,7 +444,7 @@ def reservoir_level(lvl):
       img_lvl = 200  # green
    elif lvl > 80:
       img_lvl = 150  # yellow
-   elif lvl > 0:
+   elif lvl > 1:
       img_lvl = 50   # red
    else:
       img_lvl = 0    # empty 
@@ -493,6 +496,28 @@ def time_to_calib_progress(ttc,sst,cst):
       lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x000000,0x000000)
 
 
+def sensor_age_text(rem_hours):
+   if rem_hours == 255:
+      text = ""
+   elif rem_hours > 9:
+      text = str(round(rem_hours/24))
+   else:
+      text = str(rem_hours)
+   return text
+   
+
+def sensor_age_icon(rem_hours, sensor_state):
+   if sensor_state == "CHANGE_SENSOR":
+      icon = "expired"
+   elif rem_hours == 255:
+      icon = "unk"
+   elif rem_hours > 9:
+      icon = "green"
+   else:
+      icon = "red"
+   return icon
+      
+      
 def handle_alarm(lastAlarm):
    global lastAlarmId
    global lastAlarmMsg
@@ -597,9 +622,13 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
          if haveData:
             imageBattery.set_img_src("res/mm_batt"+str(r.json()["medicalDeviceBatteryLevelPercent"])+".png")
             imageReservoir.set_img_src("res/mm_tank"+str(reservoir_level(r.json()["reservoirRemainingUnits"]))+".png")
+            imageSage.set_img_src("res/mm_sage_"+sensor_age_icon(r.json()["sensorDurationHours"],r.json()["sensorState"])+".png")
+            labelSage.set_text(sensor_age_text(r.json()["sensorDurationHours"]))
          else:
             imageBattery.set_img_src("res/mm_batt_unk.png")
             imageReservoir.set_img_src("res/mm_tank_unk.png")
+            imageSage.set_img_src("res/mm_sage_unk.png")
+            labelSage.set_text("")
          
          if r.json()["conduitSensorInRange"]:
             imageSensorConn.set_img_src("res/mm_sensor_connection_ok.png")
