@@ -107,6 +107,29 @@ Once you have finished the configuration, it will be saved on the Core2s flash m
 
 
 
+## Minimed Monitor for PC
+
+There is also an experimental version of the Minimed Monitor which runs on a PC. It has the same code base as the M5 Stack version plus some wrapper functions for the M5 Stack specific graphics API. This is very handy for testing new features and running the program directly on your desktop.
+
+![pc-minimed-monitor](img/pc-minimed-monitor.png)
+
+
+
+To run this program you need Python 3 installed on your PC. You can start the program from the console typing the following command: 
+
+```
+$ python3 minimed-mon-pc.py
+```
+
+Be sure to modify the following lines in `minimed-mon-pc.py` with the IP address where your Carelink Python Client is running:
+
+```
+proxyaddr = "0.0.0.0" # Replace with your Carelink Python Client IP address
+proxyport = 8081 
+```
+
+
+
 ## Disclaimer
 
 This project is not associated to or endorsed by [Medtronic](https://www.medtronicdiabetes.com). If you decide to use the *M5Stack Minimed Monitor* then you do this entirely at your own risk. I am not reliable for any damage it might cause. 
