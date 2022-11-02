@@ -77,15 +77,17 @@ Any contributions are welcome to overcome these shortcomings.
 
 ## Installation
 
-The *M5Stack Minimed Monitor* is a Micro Python application. Therefore you need to install Micro Python support on the Core2. This is done by flashing the UIFLOW (Core2) firmware using the M5Burner application. For details see the [M5Stack documentation](https://docs.m5stack.com/en/quick_start/m5core/m5stack_core_get_started_MicroPython) (chapter "Firmware burning").
+The *M5Stack Minimed Monitor* is a Micro Python application. Therefore you need to install Micro Python support on the Core2. This is done by flashing the UIFLOW (Core2) firmware using the M5Burner application. For details see the [M5Stack documentation](https://docs.m5stack.com/en/quick_start/m5core/uiflow) (chapter "Firmware burning").
+
+**Note**: don't use any UIFLOW firmware version newer than 1.9.7 as some fonts which *M5Stack Minimed Monitor* needs have been removed in the later versions.
 
 After booting the device with the UIFLOW firmware you have to select "USB mode" from the "Flow" menu.
 
 Then you can load and run the application  `minimed-mon.py`  on the Core2 using your favorite Python editor with Micro Python support. I have made good experience with the [Thonny editor](https://thonny.org). But [VS Code](https://code.visualstudio.com) with the M5Stack plugin should also work. 
 
-Note that you also have to transfer `res/` folder containing all the needed image files to the Core2 flash memory.
+Note that you also have to transfer the `res/` folder containing all the needed image files to the Core2 flash memory.
 
-To run the application automatically at startup, place the Python file `minimed-mon.py` in the `apps/` folder of the Core2 flash memory. On the next restart of the Core2 choose this file from the "App" menu and choose "Run".
+To run the application automatically at startup, place the Python file `minimed-mon.py` in the `apps/` folder of the Core2 flash memory. On the next restart of the Core2 choose this file from the "App" menu and choose "Run". You might have to reset the Core2 after that.
 
 
 
