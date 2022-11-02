@@ -30,6 +30,7 @@
 #    01/02/2022 - Improve error handling
 #    23/02/2022 - Handle pump banner, shield state, device in range
 #    27/03/2022 - Add sensor age icon
+#    02/11/2022 - Fix DST handling
 #
 #  TODO:
 #
@@ -65,7 +66,7 @@ import network
 import socket
 import machine
 
-VERSION = "0.5"
+VERSION = "0.6"
 
 
 # Default configuration parameters
@@ -79,7 +80,7 @@ AP_SSID     = "M5_MINIMED_MON"
 AP_ADDR     = "192.168.4.1"
 
 # Gobal variables
-dstDelta     = 1
+dstDelta     = 0
 lastUpdateTm = time.localtime(0)
 lastAlarmId  = 0
 lastAlarmMsg = None
@@ -557,6 +558,7 @@ def handle_ntpsync(ntpserver, timezone):
    # Periodic timer: sync time via NTP
    try:
       ntp = ntptime.client(host=ntpserver, timezone=int(timezone)+dstDelta)
+      #print("time: %02d:%02d (tz:%d, dd:%d)" % (ntp.hour(),ntp.minute(),int(timezone),dstDelta))
    except:
       ntp = None
    return ntp
@@ -748,6 +750,7 @@ TIMER4_PERIOD_S = 10
 TIMER5_PERIOD_S = 60
 
 # Run some timer functions immediately to init
+ttimer0()
 ttimer1()
 ttimer2()
 
@@ -759,14 +762,14 @@ ttimer2()
 #################################################
 while True:
    # Run handlers as requested
+   if runPumpdataupdate:
+      handle_pumpdataupdate(proxyaddr, proxyport)
+      runPumpdataupdate = False
    if runNtpsync:
-      handle_ntpsync(ntpserver, timezone)
+      ntp = handle_ntpsync(ntpserver, timezone)
       runNtpsync = False
    if runTimeupdate:
       handle_timeupdate(ntp, timezone)
       runTimeupdate = False
-   if runPumpdataupdate:
-      handle_pumpdataupdate(proxyaddr, proxyport)
-      runPumpdataupdate = False
    
    wait_ms(1000)
