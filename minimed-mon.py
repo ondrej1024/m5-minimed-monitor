@@ -31,13 +31,14 @@
 #    23/02/2022 - Handle pump banner, shield state, device in range
 #    27/03/2022 - Add sensor age icon
 #    02/11/2022 - Fix DST handling
+#    09/01/2023 - Improve alarm handling
 #
 #  TODO:
 #
 #  * Integration of Carelink Client
 #  * History graph for recent glucose data
 #
-#  Copyright 2021-2022, Ondrej Wisniewski 
+#  Copyright 2021-2023, Ondrej Wisniewski 
 #  
 #  
 #  This program is free software: you can redistribute it and/or modify
@@ -66,8 +67,10 @@ import network
 import socket
 import machine
 
-VERSION = "0.6"
+VERSION = "0.7"
 
+# Contants
+NTPCONST = 946681200 # seconds from 01/01/1970 to 01/01/2000
 
 # Default configuration parameters
 DEFAULT_NTP_SERVER = "pool.ntp.org"
@@ -164,7 +167,7 @@ def do_ap_msg(msg):
       lastApMsg.delete()
       lastApMsg = None
    if msg:
-      lastApMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None)
+      lastApMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None, parent=scr1)
       lastApMsg.set_text(msg)
       sndfile = "res/sound_alert.wav"
       speaker.playWAV(sndfile, rate=22000)
@@ -418,7 +421,6 @@ def align_text(label,pos,y):
 
 
 def time_delta(tm,ntp,timezone):
-   
    if tm != None and ntp != None:
       delta_min  = ntp.minute() - tm[4]
       if delta_min < 0:
@@ -517,19 +519,46 @@ def sensor_age_icon(rem_hours, sensor_state):
    else:
       icon = "red"
    return icon
-      
-      
+
+
+def convert_datetimestr_to_epoch(datetimestr):
+   # datetime string format is the following:
+   # yyyy-mm-ddThh:mm:ss.000-00:00
+   try:
+      d  = datetimestr.split('.')[0].split('T')[0]
+      t  = datetimestr.split('.')[0].split('T')[1]
+      year = int(d.split('-')[0])
+      mon  = int(d.split('-')[1])
+      day  = int(d.split('-')[2])
+      hour = int(t.split(':')[0])
+      min  = int(t.split(':')[1])
+      sec  = int(t.split(':')[2])
+      #print("%d-%d-%d %d:%d:%d"%(year,mon,day,hour,min,sec))
+      return time.mktime((year,mon,day,hour,min,sec,0,0,dstDelta))
+   except:
+      return 0
+
+   
 def handle_alarm(lastAlarm):
+   TDELTA_S = 15*60 # 15 min in seconds
    global lastAlarmId
    global lastAlarmMsg
+   
+   # Delete previous alarm message
+   if lastAlarmMsg != None:
+      lastAlarmMsg.delete() 
+      lastAlarmMsg = None
+
    try:
+      # Check for new alarm
       if lastAlarmId != lastAlarm["instanceId"]:
-         if lastAlarmId != 0:
+         # Check if alarm is recent   
+         if convert_datetimestr_to_epoch(lastAlarm["datetime"]) > (time.time() - TDELTA_S):
             # Show alarm message
             msg = lastAlarm["messageId"].split('_')[2:]
             if lastAlarmMsg != None:
                lastAlarmMsg.delete()
-            lastAlarmMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None)
+            lastAlarmMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None, parent=scr1)
             lastAlarmMsg.set_text(" ".join(msg))
             
             # Play alarm sound
@@ -606,9 +635,9 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
       lastErrorMsg.delete()
       lastErrorMsg = None
    
-   if r != None and r.status_code == 200:
+   if r != None and r.status_code == 200 and r.json() != "":
       try:
-         lastUpdateTm = time.localtime(int(r.json()["lastConduitUpdateServerTime"]/1000))
+         lastUpdateTm = time.localtime(int(r.json()["lastConduitUpdateServerTime"]/1000)) #-NTPCONST)
          
          # Check for DST
          dstDelta = 1 if r.json()["clientTimeZoneName"].lower().find("summer")>-1 else 0
@@ -702,7 +731,7 @@ def ttimer5():
    if lastErrorMsg != None:
       lastErrorMsg.delete()
       lastErrorMsg = None
-   lastErrorMsg = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None)
+   lastErrorMsg = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None, parent=scr1)
    lastErrorMsg.set_text("ERROR: urequests is stuck, reset device")
 
 
@@ -718,7 +747,7 @@ while ntp == None:
    wait_ms(1000)
    ntp = handle_ntpsync(ntpserver, timezone)
    if ntp == None and msgbox == None:
-      msgbox = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None)
+      msgbox = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None, parent=scr1)
       msgbox.set_text("Trying to synch time and date ...")
 if msgbox != None:
    msgbox.delete()
