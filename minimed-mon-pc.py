@@ -24,13 +24,13 @@
 #  Changelog:
 #
 #    30/05/2022 - Initial public release
+#    09/01/2023 - Display alarm messages
 #
 #  TODO:
 #
 #  * Integration of Carelink Client
-#  * Alarm message display
 #
-#  Copyright 2022, Ondrej Wisniewski 
+#  Copyright 2022-2023, Ondrej Wisniewski 
 #  
 #  
 #  This program is free software: you can redistribute it and/or modify
@@ -149,17 +149,20 @@ class M5Label:
       return bounds[3] - bounds[1]
 
 class M5Msgbox:
-   def __init__(self,btns_list, x, y, w, h):
+   def __init__(self,btns_list, x, y, w, h, parent):
+      self.scr = parent
+      self.x1 = x
+      self.y1 = y
+      self.x2 = x+w if w != None else WINWIDTH-x
+      self.y2 = y+h if h != None else y+30
+      self.text_h = None
+      self.rect_h = self.scr.create_rectangle(x,y,self.x2,self.y2,fill="white",outline="white")
       self.btns_list = btns_list
-      self.x = x
-      self.y = y
-      self.w = w
-      self.h = h
    def set_text(self, text):
-      # FIXME
-      print(text)
+      self.text_h = self.scr.create_text(WINWIDTH/2,self.y1+17,fill="grey",text=text,font='Helvetica 10',width=self.x2-self.x1,justify="center")
    def delete(self):
-      pass
+      self.scr.delete(self.text_h)
+      self.scr.delete(self.rect_h)
 
 class timerSch:
    def __init__(self):
@@ -267,7 +270,6 @@ def align_text(label,pos,y):
 
 
 def time_delta(tm,ntp,timezone):
-   #print("DBG: time_delta")
    if tm != None and ntp != None:
       delta_min  = ntp.minute() - tm[4]
       if delta_min < 0:
@@ -370,17 +372,45 @@ def sensor_age_icon(rem_hours, sensor_state):
    return icon
       
       
+def convert_datetimestr_to_epoch(datetimestr):
+   # datetime string format is the following:
+   # yyyy-mm-ddThh:mm:ss.000-00:00
+   try:
+      d  = datetimestr.split('.')[0].split('T')[0]
+      t  = datetimestr.split('.')[0].split('T')[1]
+      year = int(d.split('-')[0])
+      mon  = int(d.split('-')[1])
+      day  = int(d.split('-')[2])
+      hour = int(t.split(':')[0])
+      min  = int(t.split(':')[1])
+      sec  = int(t.split(':')[2])
+      #print("%d-%d-%d %d:%d:%d"%(year,mon,day,hour,min,sec))
+      return time.mktime((year,mon,day,hour,min,sec,0,0,dstDelta))
+   except:
+      return 0
+
+
 def handle_alarm(lastAlarm):
+   TDELTA_S = 15*60 # 15 min in seconds
    global lastAlarmId
    global lastAlarmMsg
+   
+   # Delete previous alarm message
+   if lastAlarmMsg != None:
+      lastAlarmMsg.delete() 
+      lastAlarmMsg = None
+
    try:
+      # Check for new alarm
       if lastAlarmId != lastAlarm["instanceId"]:
-         if lastAlarmId != 0:
+         # Check if alarm is recent
+         if convert_datetimestr_to_epoch(lastAlarm["datetime"]) > (time.time() - TDELTA_S):
             # Show alarm message
             msg = lastAlarm["messageId"].split('_')[2:]
+            print("%s : %s" % (lastAlarm["datetime"],lastAlarm["messageId"]))
             if lastAlarmMsg != None:
                lastAlarmMsg.delete()
-            lastAlarmMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None)
+            lastAlarmMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None, parent=scr1)
             lastAlarmMsg.set_text(" ".join(msg))
             
             # Play alarm sound
@@ -453,7 +483,7 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
       lastErrorMsg.delete()
       lastErrorMsg = None
    
-   if r != None and r.status_code == 200:
+   if r != None and r.status_code == 200 and r.json() != "":
       try:
          lastUpdateTm = time.localtime(int(r.json()["lastConduitUpdateServerTime"]/1000))
          
@@ -526,7 +556,7 @@ while ntp == None:
    wait_ms(1000)
    ntp = handle_ntpsync(ntpserver, timezone)
    if ntp == None and msgbox == None:
-      msgbox = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None)
+      msgbox = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None, parent=scr1)
       msgbox.set_text("Trying to synch time and date ...")
 if msgbox != None:
    msgbox.delete()
@@ -571,25 +601,23 @@ ttimer2()
 # Main loop
 #
 #################################################
-cont=True
-while cont:
+while True:
    # Run handlers as requested
+   if runPumpdataupdate:
+      handle_pumpdataupdate(proxyaddr, proxyport)
+      runPumpdataupdate = False
    if runNtpsync:
-      handle_ntpsync(ntpserver, timezone)
+      ntp = handle_ntpsync(ntpserver, timezone)
       runNtpsync = False
    if runTimeupdate:
       handle_timeupdate(ntp, timezone)
       runTimeupdate = False
-   if runPumpdataupdate:
-      handle_pumpdataupdate(proxyaddr, proxyport)
-      runPumpdataupdate = False
    
    wait_ms(100)
 
    try:
       s.window.update()
    except:
-      cont=False
+      break
 
 print("Exiting")
-
