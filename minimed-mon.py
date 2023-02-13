@@ -32,6 +32,8 @@
 #    27/03/2022 - Add sensor age icon
 #    02/11/2022 - Fix DST handling
 #    09/01/2023 - Improve alarm handling
+#    12/02/2023 - Add configuration screen
+#    12/02/2023 - Fix a regression in AP handling from 0.7 release 
 #
 #  TODO:
 #
@@ -67,7 +69,7 @@ import network
 import socket
 import machine
 
-VERSION = "0.7"
+VERSION = "0.8"
 
 # Contants
 NTPCONST = 946681200 # seconds from 01/01/1970 to 01/01/2000
@@ -167,7 +169,7 @@ def do_ap_msg(msg):
       lastApMsg.delete()
       lastApMsg = None
    if msg:
-      lastApMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None, parent=scr1)
+      lastApMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None, parent=None)
       lastApMsg.set_text(msg)
       sndfile = "res/sound_alert.wav"
       speaker.playWAV(sndfile, rate=22000)
@@ -180,7 +182,7 @@ def do_access_point(ntpserver,timezone,proxyport):
    ap.config(essid=AP_SSID)
    ap.config(authmode=3, password='123456789')
    ap.config(max_clients=1) 
-   do_ap_msg("Device configuration needed\nConnect to WIFI network %s" %(AP_SSID))
+   do_ap_msg("Device configuration needed\nConnect to WIFI network\n%s" %(AP_SSID))
    
    # Wait for client to connect
    while ap.isconnected() == False:
@@ -377,7 +379,36 @@ screen.clean_screen(scr3)
 screen.set_screen_bg_color(0x000000,scr3)
 
 # Init labels on screen 3
-# TODO
+
+# Wifi settings
+labelWifi        = M5Label('WIFI', x=31, y=0, color=0x09f31a, font=FONT_MONT_20, parent=scr3)
+labelSsid        = M5Label('SSID', x=52, y=25, color=0xffffff, font=FONT_MONT_14, parent=scr3)
+labelMySsid      = M5Label(wifissid, x=143, y=25, color=0xffffff, font=FONT_MONT_14, parent=scr3)
+
+# Time and date settings
+labelTimeAndDate = M5Label('Time and Date', x=31, y=47, color=0x09f31a, font=FONT_MONT_20, parent=scr3)
+labelNtpServer   = M5Label('NTP server', x=52, y=75, color=0xffffff, font=FONT_MONT_14, parent=scr3)
+labelMyNtpServer = M5Label(ntpserver, x=143, y=75, color=0xffffff, font=FONT_MONT_14, parent=scr3)
+labelTimeZone    = M5Label('Time zone', x=52, y=97, color=0xffffff, font=FONT_MONT_14, parent=scr3)
+labelMyTimeZone  = M5Label(timezone, x=143, y=97, color=0xffffff, font=FONT_MONT_14, parent=scr3)
+
+# Carelink proxy settings
+labelCarelinkProxy = M5Label('Carelink Proxy', x=31, y=124, color=0x09f31a, font=FONT_MONT_20, parent=scr3)
+labelIpAddress   = M5Label('IP address', x=52, y=151, color=0xffffff, font=FONT_MONT_14, parent=scr3)
+labelMyIpAddress = M5Label(proxyaddr, x=143, y=151, color=0xffffff, font=FONT_MONT_14, parent=scr3)
+labelPort        = M5Label('Port', x=52, y=173, color=0xffffff, font=FONT_MONT_14, parent=scr3)
+labelMyPort      = M5Label(proxyport, x=143, y=173, color=0xffffff, font=FONT_MONT_14, parent=scr3)
+
+# Screen 3 button
+btn0 = M5Btn(text='Reset config', x=110, y=200, w=105, h=34, bg_c=0xff0000, text_c=0xffffff, font=FONT_MONT_14, parent=scr3)
+def btn0_wasReleased():
+   # delete NVRAM parameters
+   nvs.esp32.nvs_erase('wifissid')
+   nvs.esp32.nvs_erase('wifipass')
+   # Restart
+   machine.reset()
+
+btn0.released(btn0_wasReleased)
 
 
 #################################################
