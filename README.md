@@ -99,13 +99,15 @@ Before using the *M5 Minimed Monitor*, there are basically 3 items which need to
 * An NTP server address and your time zone
 * The network address of the Carelink proxy
 
-When starting the *M5 Minimed Monitor* for the first time, it will automatically switch into Access Point mode and prompt you to connect to the Wifi network "M5_MINIMED_MON" (password is `123456789`) with your mobile phone or a PC. Then you can connect to the configuration Web UI at `http://192.168.4.1`
+When starting the *M5 Minimed Monitor* for the first time (or if Wifi connection cannot be established with the current configuration), it will automatically switch into Access Point (configuration) mode and prompt you to connect to the Wifi network "M5_MINIMED_MON" (password is `123456789`) with your mobile phone or a PC. Then you can connect to the configuration Web UI at `http://192.168.4.1`
 
 ![confg webgui](img/config-webgui.png)
 
 
 
 Once you have finished the configuration, it will be saved on the Core2s flash memory and the *M5 Minimed Monitor* will reboot. If everything went well, it starts displaying the pump data after reboot.
+
+The active configuration data can be displayed on screen #3 of the Core2, accessible via its bottom right button. On the same screen the configuration can be reset via the "Reset config" button. This will clear the configuration parameters on the flash memory and restart the Core2 in configuration mode.
 
 
 
