@@ -25,12 +25,13 @@
 #
 #    30/05/2022 - Initial public release
 #    09/01/2023 - Display alarm messages
+#    17/01/2025 - Adapt to new Carelink data format
 #
 #  TODO:
 #
 #  * Integration of Carelink Client
 #
-#  Copyright 2022-2023, Ondrej Wisniewski 
+#  Copyright 2022-2025, Ondrej Wisniewski
 #  
 #  
 #  This program is free software: you can redistribute it and/or modify
@@ -79,6 +80,7 @@ timezone  = DEFAULT_TIME_ZONE
 # API
 API_URL   = "carelink/nohistory"
 proxyaddr = "0.0.0.0" # Replace with your Carelink Python Client IP address
+proxyaddr = "192.168.1.100"
 proxyport = 8081
 
 # Gobal variables
@@ -305,7 +307,7 @@ def reservoir_level(lvl):
    return img_lvl
 
 
-def time_to_calib_progress(ttc,sst,cst):
+def time_to_calib_progress(cfs,ttc,sst,cst):
    # TODO: check if screen 1 is active
    centerX = 112
    centerY = 17
@@ -315,7 +317,7 @@ def time_to_calib_progress(ttc,sst,cst):
    endpos = int(360*((12-ttc)/12))
    endpos = min(endpos,endposfull)
    endpos = max(endpos,0)
-   if ttc == 255 or cst == "UNKNOWN": # unknown
+   if (ttc == 255 or cst == "UNKNOWN") and not cfs: # unknown
       #print("unknown")
       # full blue circle, question mark
       imageDrop.set_img_src("res/mm_drop_unk.png")
@@ -485,10 +487,10 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
    
    if r != None and r.status_code == 200 and r.json() != "":
       try:
-         lastUpdateTm = time.localtime(int(r.json()["lastConduitUpdateServerTime"]/1000))
+         lastUpdateTm = time.localtime(int(r.json()["lastConduitUpdateServerDateTime"]/1000))
          
          # Check for DST
-         dstDelta = 1 if r.json()["clientTimeZoneName"].lower().find("summer")>-1 else 0
+         dstDelta = 1 if r.json()["clientTimeZoneName"].lower().find("Summer")>-1 else 0
          
          # Check for alarm notification
          handle_alarm(r.json()["lastAlarm"])
@@ -499,7 +501,7 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
          ##### Screen 1 #####
          
          if haveData:
-            imageBattery.set_img_src("res/mm_batt"+str(r.json()["medicalDeviceBatteryLevelPercent"])+".png")
+            imageBattery.set_img_src("res/mm_batt"+str(r.json()["pumpBatteryLevelPercent"])+".png")
             imageReservoir.set_img_src("res/mm_tank"+str(reservoir_level(r.json()["reservoirRemainingUnits"]))+".png")
             imageSage.set_img_src("res/mm_sage_"+sensor_age_icon(r.json()["sensorDurationHours"],r.json()["sensorState"])+".png")
             labelSage.set_text(sensor_age_text(r.json()["sensorDurationHours"]))
@@ -514,7 +516,7 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
          else:
             imageSensorConn.set_img_src("res/mm_sensor_connection_nok.png")
          
-         time_to_calib_progress(r.json()["timeToNextCalibHours"],r.json()["sensorState"],r.json()["calibStatus"])
+         time_to_calib_progress(r.json()["calFreeSensor"],r.json()["timeToNextCalibHours"],r.json()["sensorState"],r.json()["calibStatus"])
          
          if not haveData or r.json()["therapyAlgorithmState"]["autoModeShieldState"] == "FEATURE_OFF":
             imageShield.set_hidden(True)
@@ -527,13 +529,19 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
          align_text(labelBglValue,"center",95)
          
          if haveData:
-            labelActInsValue.set_text(str(r.json()["activeInsulin"]["amount"])+" U")
+            labelActInsValue.set_text(str(round(r.json()["activeInsulin"]["amount"],1))+" U")
          else:
             labelActInsValue.set_text("-- U")
          align_text(labelActInsValue,"right",173)
       except:
          pass
       
+      try:
+         systemStatus = r.json()["systemStatusMessage"]
+         print("systemStatus: %s" % systemStatus)
+      except:
+         pass
+
       try:
          pumpBanner = r.json()["pumpBannerState"][0]["type"]
          imageBanner.set_img_src("res/mm_banner_"+pumpBanner.lower()+".png")
