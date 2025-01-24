@@ -35,13 +35,14 @@
 #    12/02/2023 - Add configuration screen
 #    12/02/2023 - Fix a regression in AP handling from 0.7 release 
 #    17/01/2025 - Adapt to new Carelink data format
+#    21/01/2025 - Display system status message
 #
 #  TODO:
 #
 #  * Integration of Carelink Client
 #  * History graph for recent glucose data
 #
-#  Copyright 2021-2023, Ondrej Wisniewski 
+#  Copyright 2021-2025, Ondrej Wisniewski
 #  
 #  
 #  This program is free software: you can redistribute it and/or modify
@@ -70,9 +71,9 @@ import network
 import socket
 import machine
 
-VERSION = "0.9"
+VERSION = "1.0"
 
-# Contants
+# Constants
 NTPCONST = 946681200 # seconds from 01/01/1970 to 01/01/2000
 
 # Default configuration parameters
@@ -91,6 +92,7 @@ lastUpdateTm = time.localtime(0)
 lastAlarmId  = 0
 lastAlarmMsg = None
 lastErrorMsg = None
+lastStatusMsg = None
 lastApMsg    = None
 runNtpsync        = False
 runTimeupdate     = False
@@ -649,6 +651,7 @@ def ttimer2():
 
 def handle_pumpdataupdate(proxyaddr, proxyport):
    global lastErrorMsg
+   global lastStatusMsg
    global lastUpdateTm
    global dstDelta
    proxy_url = "http://%s:%s/%s" % (proxyaddr, proxyport, API_URL)
@@ -717,6 +720,19 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
       except:
          pass
       
+      try:
+         systemStatus = r.json()["systemStatusMessage"]
+         if systemStatus == "NO_ERROR_MESSAGE":
+            raise Exception
+         else:
+            if lastStatusMsg == None:
+               lastStatusMsg = M5Msgbox(btns_list=None, x=0, y=50, w=None, h=None, parent=scr1)
+            lastStatusMsg.set_text(systemStatus.replace("_"," "))
+      except:
+         if lastStatusMsg != None:
+            lastStatusMsg.delete()
+            lastStatusMsg = None
+
       try:
          pumpBanner = r.json()["pumpBannerState"][0]["type"]
          imageBanner.set_img_src("res/mm_banner_"+pumpBanner.lower()+".png")

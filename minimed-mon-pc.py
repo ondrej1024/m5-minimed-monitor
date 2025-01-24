@@ -26,6 +26,7 @@
 #    30/05/2022 - Initial public release
 #    09/01/2023 - Display alarm messages
 #    17/01/2025 - Adapt to new Carelink data format
+#    21/01/2025 - Display system status message
 #
 #  TODO:
 #
@@ -89,6 +90,7 @@ lastUpdateTm = time.localtime(0)
 lastAlarmId  = 0
 lastAlarmMsg = None
 lastErrorMsg = None
+lastStatusMsg = None
 lastApMsg    = None
 runNtpsync        = False
 runTimeupdate     = False
@@ -113,9 +115,10 @@ class M5Screen:
       self.scr = Canvas(self.window, width=WINWIDTH,height=WINHEIGHT,bg='black',highlightthickness=0)
       #self.scr.pack()
       self.scr.place(relx=0.5, rely=0.5, anchor=CENTER)
-   def set_screen_bg_color(color):
-      pass
-   def set_screen_brightness(brightness):
+   def set_screen_bg_color(self, color):
+      self.window.configure(bg=color)
+      self.scr.configure(bg=color)
+   def set_screen_brightness(self, brightness):
       pass
 
 class M5Img:
@@ -157,11 +160,11 @@ class M5Msgbox:
       self.y1 = y
       self.x2 = x+w if w != None else WINWIDTH-x
       self.y2 = y+h if h != None else y+30
-      self.text_h = None
       self.rect_h = self.scr.create_rectangle(x,y,self.x2,self.y2,fill="white",outline="white")
+      self.text_h = self.scr.create_text(WINWIDTH/2,self.y1+17,fill="grey",text="text",font=FONT_MONT_16,width=self.x2-self.x1,justify="center")
       self.btns_list = btns_list
    def set_text(self, text):
-      self.text_h = self.scr.create_text(WINWIDTH/2,self.y1+17,fill="grey",text=text,font='Helvetica 10',width=self.x2-self.x1,justify="center")
+      self.scr.itemconfig(self.text_h,text=text)
    def delete(self):
       self.scr.delete(self.text_h)
       self.scr.delete(self.rect_h)
@@ -288,6 +291,8 @@ def time_delta(tm,ntp,timezone):
          delta_txt = "Now"
       elif delta_min > 15 or delta_hour > 1:
          delta_txt = "No data"
+         #deltaMsg = M5Msgbox(btns_list=None, x=0, y=50, w=None, h=None, parent=scr1)
+         #deltaMsg.set_text("No data")
       else:
          delta_txt = str(delta_min)+" min ago"
    else:
@@ -467,6 +472,7 @@ def ttimer2():
 
 def handle_pumpdataupdate(proxyaddr, proxyport):
    global lastErrorMsg
+   global lastStatusMsg
    global lastUpdateTm
    global dstDelta
    proxy_url = "http://%s:%s/%s" % (proxyaddr, proxyport, API_URL)
@@ -538,9 +544,17 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
       
       try:
          systemStatus = r.json()["systemStatusMessage"]
-         print("systemStatus: %s" % systemStatus)
+         if systemStatus == "NO_ERROR_MESSAGE":
+            raise Exception
+         else:
+            if lastStatusMsg == None:
+               lastStatusMsg = M5Msgbox(btns_list=None, x=0, y=50, w=None, h=None, parent=scr1)
+            lastStatusMsg.set_text(systemStatus.replace("_"," "))
+            print("systemStatus: %s" % systemStatus)
       except:
-         pass
+         if lastStatusMsg != None:
+            lastStatusMsg.delete()
+            lastStatusMsg = None
 
       try:
          pumpBanner = r.json()["pumpBannerState"][0]["type"]
