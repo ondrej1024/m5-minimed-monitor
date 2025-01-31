@@ -478,8 +478,8 @@ def time_to_calib_progress(cfs,ttc,sst,cst):
    # TODO: check if screen 1 is active
    centerX = 112
    centerY = 17
-   radius  = 16
-   thick   = 4
+   radius  = 15
+   thick   = 16
    endposfull = 359
    endpos = int(360*((12-ttc)/12))
    endpos = min(endpos,endposfull)
@@ -494,19 +494,20 @@ def time_to_calib_progress(cfs,ttc,sst,cst):
       # full green circle, white drop
       imageDrop.setImage("res/mm_drop_white.png")
       imageDrop.setCursor(105, 8)
-      lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x33cc00,0x33cc00)
+      #lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x33cc00,0x33cc00)
+      M5.Display.drawArc(centerX, centerY, radius, thick, 0, endposfull,0x33cc00)
    elif ttc > 3:
       # decreasing green circle, white drop
       imageDrop.setImage("res/mm_drop_white.png")
       imageDrop.setCursor(105, 8)
-      lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x33cc00,0x33cc00)
-      lcd.arc(centerX, centerY, radius, thick, 0, endpos,0x000000,0x000000)
+      #lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x33cc00,0x33cc00)
+      #lcd.arc(centerX, centerY, radius, thick, 0, endpos,0x000000,0x000000)
    elif ttc > 0:
       # decreasing red circle, white drop
       imageDrop.setImage("res/mm_drop_white.png")
       imageDrop.setCursor(105, 8)
-      lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0xff0000,0xff0000)
-      lcd.arc(centerX, centerY, radius, thick, 0, endpos,0x000000,0x000000)
+      #lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0xff0000,0xff0000)
+      #lcd.arc(centerX, centerY, radius, thick, 0, endpos,0x000000,0x000000)
    else:
       if sst == "CALIBRATION_REQUIRED":
          # no circle, red drop
@@ -516,7 +517,7 @@ def time_to_calib_progress(cfs,ttc,sst,cst):
          # no circle, white drop
          imageDrop.setImage("res/mm_drop_white.png")
          imageDrop.setCursor(105, 8)
-      lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x000000,0x000000)
+      #lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x000000,0x000000)
 
 
 def sensor_age_text(rem_hours):
@@ -692,6 +693,7 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
             imageReservoir.setImage("res/mm_tank"+str(reservoir_level(r.json()["reservoirRemainingUnits"]))+".png")
             imageSage.setImage("res/mm_sage_"+sensor_age_icon(r.json()["sensorDurationHours"],r.json()["sensorState"])+".png")
             labelSage.setText(sensor_age_text(r.json()["sensorDurationHours"]))
+            labelSage.setVisible(True)
          else:
             print("no valid data")
             imageBattery.setImage("res/mm_batt_unk.png")
@@ -713,6 +715,7 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
             imageShield.setVisible(True)
          lastSG = r.json()["lastSG"]["sg"]
          labelBglValue.setText(str(lastSG) if lastSG > 0 else "--")
+         labelBglValue.setVisible(True)
          align_text(labelBglValue,"center",90)
          
          if haveData:
@@ -851,16 +854,18 @@ def setup():
    imageDrop        = M5.Widgets.Image("res/mm_drop_unk.png", x=105, y=8, parent=scr1)
    imageSage        = M5.Widgets.Image("res/mm_sage_unk.png", x=135, y=0, parent=scr1)
    imageShield      = M5.Widgets.Image("res/mm_shield_none.png", x=65, y=33, parent=scr1)
+   imageShield.setVisible(False)
    imageBanner      = M5.Widgets.Image("res/mm_banner_delivery_suspend.png", x=40, y=145, parent=scr1)
-
+   imageBanner.setVisible(False)
+   
    # Init labels on screen 1
-   labelBglValue    = M5.Widgets.Label('--', x=140, y=90, text_c=0xffffff, font=Widgets.FONTS.DejaVu56, parent=scr1)
+   labelBglValue    = M5.Widgets.Label('--', x=120, y=90, text_c=0xffffff, font=Widgets.FONTS.DejaVu56, parent=scr1)
    labelBglUnit     = M5.Widgets.Label('mg/dL', x=137, y=145, text_c=0x89abeb, font=Widgets.FONTS.DejaVu12, parent=scr1)
-   labelActInsValue = M5.Widgets.Label('-- U', x=261, y=173, text_c=0xffffff, font=Widgets.FONTS.DejaVu24, parent=scr1)
+   labelActInsValue = M5.Widgets.Label('-- U', x=255, y=173, text_c=0xffffff, font=Widgets.FONTS.DejaVu24, parent=scr1)
    labelActIns      = M5.Widgets.Label('Act Insulin', x=220, y=200, text_c=0xffffff, font=Widgets.FONTS.DejaVu18, parent=scr1)
-   labelTime        = M5.Widgets.Label('--:--', x=250, y=0, text_c=0xffffff, font=Widgets.FONTS.DejaVu24, parent=scr1)
+   labelTime        = M5.Widgets.Label('--:--', x=248, y=0, text_c=0xffffff, font=Widgets.FONTS.DejaVu24, parent=scr1)
    labelLastData    = M5.Widgets.Label('--', x=120, y=218, text_c=0xffffff, font=Widgets.FONTS.DejaVu18, parent=scr1)
-   labelSage        = M5.Widgets.Label('', x=144, y=8, text_c=0xffffff, font=Widgets.FONTS.DejaVu12, parent=scr1)
+   labelSage        = M5.Widgets.Label('', x=144, y=8, text_c=0xffffff, font=Widgets.FONTS.DejaVu18, parent=scr1)
 
    '''
    # Create screen 2
@@ -971,6 +976,8 @@ def loop():
    global runNtpsync
    global runTimeupdate
 
+   M5.update()
+   
    # Run handlers as requested
    if runPumpdataupdate:
       handle_pumpdataupdate(proxyaddr, proxyport)
