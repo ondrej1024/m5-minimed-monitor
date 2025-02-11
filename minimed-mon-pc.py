@@ -87,7 +87,7 @@ proxyport = 8081
 # Gobal variables
 dstDelta     = 0
 lastUpdateTm = time.localtime(0)
-lastAlarmId  = 0
+lastAlarmId  = None
 lastAlarmMsg = None
 lastErrorMsg = None
 lastStatusMsg = None
@@ -95,6 +95,73 @@ lastApMsg    = None
 runNtpsync        = False
 runTimeupdate     = False
 runPumpdataupdate = False
+
+# Fault ID table
+faultIdTable = {
+   "002": "Pump Error. Delivery Stopped",
+   "006": "Pump Battery Out Limit",
+   "007": "Delivery Stopped. Check BG",
+   "011": "Replace Pump Battery Now",
+   "012": "Auto Suspend Limit Reached. Delivery Stopped",
+   "024": "Critical Pump Error. Stop Pump Use. Use Other Treatment",
+   "025": "Pump Power Error. Record Settings",
+   "029": "Pump Restarted. Delivery Stopped",
+   "037": "Pump Motor Error. Delivery Stopped",
+   "051": "Bolus Stopped",
+   "052": "Delivery Limit Exceeded. Check BG",
+   "057": "Pump Battery Not Compatible",
+   "058": "Insert A New AA Battery",
+   "061": "Pump Button Error. Delivery Stopped",
+   "062": "New Notification Received From Pump",
+   "066": "No Reservoir Detected During Infusion Set Change",
+   "069": "Loading Incomplete During Infusion Set Change",
+   "073": "Replace Pump Battery Now",
+   "077": "Pump Settings Error. Delivery Stopped",
+   "084": "Pump Battery Removed. Replace Battery",
+   "100": "Bolus Entry Timed Out Before Delivery",
+   "103": "BG Check Reminder",
+   "104": "Replace Pump Battery Soon",
+   "105": "Reservoir Low. Change Reservoir Soon",
+   "107": "Missed Meal Bolus Reminder",
+   "109": "Set Change Reminder",
+   "110": "Silenced Sensor Alert. Check Alarm History",
+   "113": "Reservoir Empty. Change Reservoir Now",
+   "117": "Active Insulin Cleared",
+   "130": "Rewind Required. Delivery Stopped",
+   "140": "Delivery Suspended. Connect Infusion Set",
+   "775": "Calibrate Now",
+   "776": "Calibration Error",
+   "777": "Change Sensor",
+   "779": "Recharge Transmitter Now",
+   "780": "Lost Sensor Signal",
+   "784": "SG Rising Rapidly",
+   "794": "Sensor Expired. Change Sensor",
+   "795": "Lost Sensor Signal. Check Transmitter",
+   "796": "No Sensor Signal",
+   "797": "Sensor Connected",
+   "801": "Do Not Calibrate. Wait Up To 3 Hours",
+   "802": "Low Sensor Glucose",
+   "803": "Low Sensor Glucose. Check BG",
+   "805": "Alert Before Low. Check BG",
+   "807": "Basal Delivery Resumed. Check BG",
+   "809": "Suspend On Low. Delivery Stopped. Check BG",
+   "810": "Suspend Before Low. Delivery Stopped. Check BG",
+   "812": "Call Emergency Assistance",
+   "814": "Basal Resumed. SG Still Under Low Limit. Check BG",
+   "815": "Low Limit Changed. Basal Manually Resumed. Check BG",
+   "816": "High Sensor Glucose",
+   "817": "Alert Before High. Check BG",
+   "819": "Auto Mode Exit. Basal Delivery Started. BG Required",
+   "821": "Minimum Delivery Timeout. BG Required",
+   "822": "Maximum Delivery Timeout. BG Required",
+   "823": "High Sensor Glucose For Over 1 Hour",
+   "827": "Urgent Low Sensor Glucose. Check BG",
+   "829": "BG Required",
+   "832": "Calibration Required",
+   "833": "Correction Bolus Recommended",
+   "869": "Calibration Reminder",
+   "870": "Recharge Transmitter Soon",
+}
 
 
 #################################################
@@ -397,6 +464,15 @@ def convert_datetimestr_to_epoch(datetimestr):
       return 0
 
 
+def getFaultStr(faultId):
+   try:
+      faultStr = faultIdTable[faultId]
+   except KeyError:
+      faultStr = "Unknow error"
+   print("faultStr = %s" % faultStr)
+   return faultStr
+
+
 def handle_alarm(lastAlarm):
    TDELTA_S = 15*60 # 15 min in seconds
    global lastAlarmId
@@ -409,24 +485,23 @@ def handle_alarm(lastAlarm):
 
    try:
       # Check for new alarm
-      if lastAlarmId != lastAlarm["instanceId"]:
+      if lastAlarmId != lastAlarm["GUID"]:
          # Check if alarm is recent
-         if convert_datetimestr_to_epoch(lastAlarm["datetime"]) > (time.time() - TDELTA_S):
+         if convert_datetimestr_to_epoch(lastAlarm["dateTime"]) > (time.time() - TDELTA_S):
             # Show alarm message
-            msg = lastAlarm["messageId"].split('_')[2:]
-            print("%s : %s" % (lastAlarm["datetime"],lastAlarm["messageId"]))
+            msg = getFaultStr(lastAlarm["faultId"])
             if lastAlarmMsg != None:
                lastAlarmMsg.delete()
             lastAlarmMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None, parent=scr1)
-            lastAlarmMsg.set_text(" ".join(msg))
-            
+            lastAlarmMsg.set_text(msg)
+
             # Play alarm sound
-            if lastAlarm["kind"] == "ALARM":
+            if lastAlarm["type"] == "ALARM":
                sndfile = "res/sound_alarm.wav"
             else:
                sndfile = "res/sound_alert.wav"
             speaker.playWAV(sndfile, rate=22000)
-         lastAlarmId = lastAlarm["instanceId"]
+         lastAlarmId = lastAlarm["GUID"]
    except:
       pass
         
