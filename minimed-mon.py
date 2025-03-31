@@ -37,6 +37,7 @@
 #    17/01/2025 - Adapt to new Carelink data format
 #    21/01/2025 - Display system status message
 #    11/02/2025 - Adapt alarm handling to new data format
+#    31/03/2025 - Fix regression bug in DST handling
 #
 #  TODO:
 #
@@ -72,7 +73,7 @@ import network
 import socket
 import machine
 
-VERSION = "1.1"
+VERSION = "1.2"
 
 # Constants
 NTPCONST = 946681200 # seconds from 01/01/1970 to 01/01/2000
@@ -893,7 +894,7 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
          lastUpdateTm = time.localtime(int(r.json()["lastConduitUpdateServerDateTime"]/1000)) #-NTPCONST)
          
          # Check for DST
-         dstDelta = 1 if r.json()["clientTimeZoneName"].lower().find("Summer")>-1 else 0
+         dstDelta = 1 if r.json()["clientTimeZoneName"].lower().find("summer")>-1 else 0
          
          # Check for alarm notification
          handle_alarm(r.json()["lastAlarm"])

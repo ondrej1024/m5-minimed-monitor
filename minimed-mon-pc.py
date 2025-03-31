@@ -712,7 +712,7 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
          lastUpdateTm = time.localtime(int(r.json()["lastConduitUpdateServerDateTime"]/1000))
          
          # Check for DST
-         dstDelta = 1 if r.json()["clientTimeZoneName"].lower().find("Summer")>-1 else 0
+         dstDelta = 1 if r.json()["clientTimeZoneName"].lower().find("summer")>-1 else 0
          
          # Check for alarm notification
          handle_alarm(r.json()["lastAlarm"])
