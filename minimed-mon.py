@@ -1,17 +1,17 @@
 ###############################################################################
-#  
+#
 #  M5Stack Minimed Monitor
-#  
+#
 #  Description:
 #
 #  This is an application for the M5Stack Core2 device. It implements a remote
-#  monitor for the Medtronic Minimed 770G/780G insulin pump system to be used  
+#  monitor for the Medtronic Minimed 770G/780G insulin pump system to be used
 #  by caregivers of Type-1 Diabetes patients wearing the pump.
 #
 #  Dependencies:
 #
 #  At this stage, the M5Stack Minimed Monitor relies on an external instance
-#  of the Carelink Python Client to provide the Pump data downloaded from the 
+#  of the Carelink Python Client to provide the Pump data downloaded from the
 #  Carelink Cloud.
 #
 #  Carelink Python Client
@@ -20,7 +20,7 @@
 #  Author:
 #
 #    Ondrej Wisniewski (ondrej.wisniewski *at* gmail.com)
-#  
+#
 #  Changelog:
 #
 #    28/06/2021 - Initial public release
@@ -33,72 +33,120 @@
 #    02/11/2022 - Fix DST handling
 #    09/01/2023 - Improve alarm handling
 #    12/02/2023 - Add configuration screen
-#    12/02/2023 - Fix a regression in AP handling from 0.7 release 
+#    12/02/2023 - Fix a regression in AP handling from 0.7 release
 #    17/01/2025 - Adapt to new Carelink data format
 #    21/01/2025 - Display system status message
 #    11/02/2025 - Adapt alarm handling to new data format
 #    31/03/2025 - Fix regression bug in DST handling
+#    01/09/2026 - Porting to UIFlow2
 #
-#  TODO:
 #
-#  * Integration of Carelink Client
-#  * History graph for recent glucose data
+#  Copyright 2021-2026, Ondrej Wisniewski
 #
-#  Copyright 2021-2025, Ondrej Wisniewski
-#  
-#  
+#
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
 #  the Free Software Foundation, either version 3 of the License, or
 #  (at your option) any later version.
-# 
+#
 #  This program is distributed in the hope that it will be useful,
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-# 
+#
 #  You should have received a copy of the GNU General Public License
 #  along with crelay.  If not, see <http://www.gnu.org/licenses/>.
-#  
+#
 ###############################################################################
 
-from m5stack import *
-from m5stack_ui import *
-from uiflow import *
-import ntptime
+
+import os, sys, io
+import M5
+from M5 import *
+import m5ui
+import lvgl as lv
+
+from hardware import Timer
+import esp
+import machine
 import time
-import urequests
-import nvs
+import ntptime
 import network
 import socket
-import machine
+import requests2
 
-VERSION = "1.2"
 
+#################################################
+#
 # Constants
-NTPCONST = 946681200 # seconds from 01/01/1970 to 01/01/2000
+#
+#################################################
+
+VERSION = "2.0.beta"
 
 # Default configuration parameters
 DEFAULT_NTP_SERVER = "pool.ntp.org"
-DEFAULT_TIME_ZONE  = "1"
-DEFAULT_PROXY_PORT = "8081"
+DEFAULT_TIME_ZONE  = 1
+DEFAULT_PROXY_PORT = 8081
 
 # Access point parameters
 API_URL     = "carelink/nohistory"
 AP_SSID     = "M5_MINIMED_MON"
 AP_ADDR     = "192.168.4.1"
 
-# Gobal variables
-dstDelta     = 0
-lastUpdateTm = time.localtime(0)
-lastAlarmId  = None
-lastAlarmMsg = None
-lastErrorMsg = None
+TIMER0_PERIOD_S = 1200
+TIMER1_PERIOD_S = 10
+TIMER2_PERIOD_S = 60
+TIMER3_PERIOD_S = 10
+
+
+#################################################
+#
+# Global variables
+#
+#################################################
+
+# Pages
+page0 = None
+page1 = None
+page2 = None
+page3 = None
+
+# Images
+imageBattery = None
+imageReservoir = None
+imageSensorConn = None
+imageDrop = None
+imageSage = None
+imageShield = None
+imageBanner = None
+
+# Labels
+labelBglValue = None
+labelBglUnit = None
+labelActInsValue = None
+labelActIns = None
+labelTime = None
+labelLastData = None
+
+# Timers
+timer0 = None
+timer1 = None
+timer2 = None
+timer3 = None
+
+# Other
+dstDelta      = 0
+lastUpdateTm  = 0
+lastAlarmId   = None
+lastAlarmMsg  = None
+lastErrorMsg  = None
 lastStatusMsg = None
-lastApMsg    = None
+lastApMsg     = None
 runNtpsync        = False
 runTimeupdate     = False
 runPumpdataupdate = False
+
 
 # Fault ID mapping
 faultIdMapping = {
@@ -382,10 +430,10 @@ def do_ap_msg(msg):
       lastApMsg.delete()
       lastApMsg = None
    if msg:
-      lastApMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None, parent=None)
-      lastApMsg.set_text(msg)
-      sndfile = "res/sound_alert.wav"
-      speaker.playWAV(sndfile, rate=22000)
+      lastApMsg = m5ui.M5Msgbox(title=msg, x=0, y=100, w=320, h=50, parent=page0)
+      #lastApMsg.set_text(msg)
+      sndfile = "/flash/res/audio/sound_alert.wav"
+      Speaker.playWavFile(sndfile)
 
 
 def do_access_point(ntpserver,timezone,proxyport):
@@ -394,19 +442,19 @@ def do_access_point(ntpserver,timezone,proxyport):
    ap.active(True)
    ap.config(essid=AP_SSID)
    ap.config(authmode=3, password='123456789')
-   ap.config(max_clients=1) 
+   ap.config(max_clients=1)
    do_ap_msg("Device configuration needed\nConnect to WIFI network\n%s" %(AP_SSID))
-   
+
    # Wait for client to connect
    while ap.isconnected() == False:
        pass
    do_ap_msg("WIFI connection established\nLoad address %s in web browser" % (AP_ADDR))
-   
+
    # Get WIFI credentials via Web GUI
    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
    s.bind((AP_ADDR, 80))
    s.listen(5)
-   
+
    while True:
       # Get request
       conn,addr = s.accept()
@@ -417,7 +465,7 @@ def do_access_point(ntpserver,timezone,proxyport):
       print("request: %s\n" % (request))
       #print("rmethod: %s\n" % (rmethod))
       print("rurl: %s\n" % (rurl))
-      
+
       # Send response headers
       conn.send('HTTP/1.1 200 OK\n')
       conn.send('Content-Type: text/html\n')
@@ -437,7 +485,7 @@ def do_access_point(ntpserver,timezone,proxyport):
             timezone  != None and timezone  != "" and \
             proxyaddr != None and proxyaddr != "" and \
             proxyport != None and proxyport != "":
-            
+
             print("New configuration parameters received\n")
             # Send reboot page
             conn.sendall(web_page_success())
@@ -447,26 +495,43 @@ def do_access_point(ntpserver,timezone,proxyport):
       # Send setup page
       conn.sendall(web_page_config(ntpserver,timezone,proxyport))
       conn.close()
-            
-   # Write WIFI credentials to EEPROM
-   nvs.write_str('wifissid',  wifissid) 
-   wait_ms(100)
-   nvs.write_str('wifipass',  wifipass)
-   wait_ms(100)
-   nvs.write_str('ntpserver', ntpserver)
-   wait_ms(100)
-   nvs.write_str('timezone',  timezone)
-   wait_ms(100)
-   nvs.write_str('proxyaddr', proxyaddr)
-   wait_ms(100)
-   nvs.write_str('proxyport', proxyport)
-   wait_ms(100)
+
+   # Write config data to EEPROM
+   nvs = esp32.NVS("mmmon")
+
+   nvs.set_str('wifissid',  wifissid.strip())
+   time.sleep_ms(100)
+
+   nvs.set_str('wifipass',  wifipass.strip())
+   time.sleep_ms(100)
+
+   nvs.set_str('ntpserver', ntpserver.strip())
+   time.sleep_ms(100)
+
+   try:
+      nvs.set_i8('timezone', int(timezone))
+   except:
+      print("invalid time zone, saving default")
+      nvs.set_i8('timezone', DEFAULT_TIME_ZONE)
+   time.sleep_ms(100)
+
+   nvs.set_str('proxyaddr', proxyaddr.strip())
+   time.sleep_ms(100)
+
+   try:
+      nvs.set_u16('proxyport', int(proxyport))
+   except:
+      print("invalid proxy port, saving default")
+      nvs.set_u16(DEFAULT_PROXY_PORT)
+   time.sleep_ms(100)
+
+   nvs.commit()
    print("New configuration parameters stored in EEPROM\n")
    print("wifissid: %s, wifipass: %s, proxyaddr: %s, proxyport: %s, ntpserver: %s, timezone: %s\n" % (wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone))
    do_ap_msg("New configuration parameters stored in EEPROM\nResetting device ...")
 
    # Reset device
-   wait_ms(8000)
+   time.sleep_ms(8000)
    machine.reset()
 
 
@@ -478,46 +543,41 @@ def do_access_point(ntpserver,timezone,proxyport):
 
 def read_config():
    # Try to read config from EEPROM
-   wifissid  = nvs.read_str('wifissid')
-   wifipass  = nvs.read_str('wifipass')
-   ntpserver = nvs.read_str('ntpserver')
-   timezone  = nvs.read_str('timezone')
-   proxyaddr = nvs.read_str('proxyaddr')
-   proxyport = nvs.read_str('proxyport')
-
-   # Set default values
-   if proxyport == None:
-      proxyport = DEFAULT_PROXY_PORT
-   if ntpserver == None:
-      ntpserver = DEFAULT_NTP_SERVER
-   if timezone == None:
-      timezone  = DEFAULT_TIME_ZONE
-
-   # To delete a key/value pair use the following command
-   # nvs.esp32.nvs_erase(<key>)
-
-   if wifissid == None or wifipass == None or proxyaddr == None:
+   nvs = esp32.NVS("mmmon")
+   try:
+      wifissid  = nvs.get_str('wifissid')
+      wifipass  = nvs.get_str('wifipass')
+      ntpserver = nvs.get_str('ntpserver')
+      tz_int  = nvs.get_i8('timezone')
+      if tz_int < 0:
+         timezone = "GMT%d" % tz_int
+      else:
+         timezone = "GMT+%d" % tz_int
+      proxyaddr = nvs.get_str('proxyaddr')
+      proxyport = str(nvs.get_u16('proxyport'))
+   except OSError:
       print("Needed configuration parameters not found in EEPROM\n")
       # Start access point for configuration
-      do_access_point(ntpserver,timezone,proxyport)
+      do_access_point(DEFAULT_NTP_SERVER,DEFAULT_TIME_ZONE,DEFAULT_PROXY_PORT)
 
    return (wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone)
 
 
 #################################################
 #
-# Connect to network
+# WIFI connection handling
 #
 #################################################
 
-def wlan_connect(wifissid, wifipass, ntpserver, timezone, proxyport):
+def wlan_connect(wifissid, wifipass):
    # Try to connect to WIFI network
+   print("connecting Wifi")
    wlan = network.WLAN(network.STA_IF)
    wlan.active(True)
    wlan.connect(wifissid, wifipass)
    ctimeout=0
    while not wlan.isconnected():
-      wait_ms(1000)
+      time.sleep_ms(1000)
       ctimeout += 1
       if ctimeout > 5:
          break
@@ -525,128 +585,9 @@ def wlan_connect(wifissid, wifipass, ntpserver, timezone, proxyport):
       wlan.active(False)
       print("Failed to connect to WIFI network %s\n" % (wifissid))
       # Start access point for configuration
-      do_access_point(ntpserver,timezone,proxyport)
-
-
-# Startup message
-lcd.clear()
-lcd.font(lcd.FONT_DejaVu24)
-lcd.setTextColor(lcd.WHITE)
-lcd.println("Minimed Mon, ver %s" % (VERSION))
-print("Minimed Mon, ver %s" % (VERSION))
-wait_ms(3000)
-
-# Init screen
-screen = M5Screen()
-screen.clean_screen()
-screen.set_screen_bg_color(0x000000)
-screen.set_screen_brightness(40)
-
-# Read config from EEPROM
-wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone = read_config()
-print("wifissid: %s, wifipass: %s, proxyaddr: %s, proxyport: %s, ntpserver: %s, timezone: %s\n" % (wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone))
-
-# Connect to network
-wlan_connect(wifissid, wifipass, ntpserver, timezone, proxyport)
-
-# Create screen 1
-scr1 = None
-
-# Load images on screen 1
-imageBattery     = M5Img("res/mm_batt_unk.png", x=6, y=0, parent=scr1)
-imageReservoir   = M5Img("res/mm_tank_unk.png", x=40, y=0, parent=scr1)
-imageSensorConn  = M5Img("res/mm_sensor_connection_nok.png", x=68, y=0, parent=scr1)
-imageDrop        = M5Img("res/mm_drop_unk.png", x=105, y=8, parent=scr1)
-imageSage        = M5Img("res/mm_sage_unk.png", x=135, y=0, parent=scr1)
-imageShield      = M5Img("res/mm_shield_none.png", x=65, y=33, parent=scr1)
-imageBanner      = M5Img("res/mm_banner_delivery_suspend.png", x=40, y=145, parent=scr1)
-
-# Init labels on screen 1
-labelBglValue    = M5Label('--', x=140, y=90, color=0xffffff, font=FONT_MONT_48, parent=scr1)
-labelBglUnit     = M5Label('mg/dL', x=137, y=145, color=0x89abeb, font=FONT_MONT_16, parent=scr1)
-labelActInsValue = M5Label('-- U', x=261, y=173, color=0xffffff, font=FONT_MONT_26, parent=scr1)
-labelActIns      = M5Label('Act Insulin', x=231, y=200, color=0xffffff, font=FONT_MONT_16, parent=scr1)
-labelTime        = M5Label('--:--', x=250, y=0, color=0xffffff, font=FONT_MONT_28, parent=scr1)
-labelLastData    = M5Label('--', x=120, y=218, color=0xffffff, font=FONT_MONT_20, parent=scr1)
-labelSage        = M5Label('', x=144, y=8, color=0xffffff, font=FONT_MONT_14, parent=scr1)
-
-# Create screen 2
-scr2 = screen.get_new_screen()
-screen.clean_screen(scr2)
-screen.set_screen_bg_color(0x000000,scr2)
-
-# Init labels on screen 2
-labelScreen2Title     = M5Label('In target range (last 24h)', x=9, y=0, color=0xffffff, font=FONT_MONT_22, parent=scr2)
-labelAboveTarget      = M5Label('Above target 180 mg/dl:', x=9, y=60, color=0xffc418, font=FONT_MONT_18, parent=scr2)
-labelInTarget         = M5Label('In target:', x=9, y=90, color=0x45db49, font=FONT_MONT_18, parent=scr2)
-labelBelowTarget      = M5Label('Below target 70 mg/dl:', x=9, y=119, color=0xff0000, font=FONT_MONT_18, parent=scr2)
-labelAgerageSg        = M5Label('Average SG:', x=9, y=147, color=0xa0a0a0, font=FONT_MONT_18, parent=scr2)
-labelAboveTargetValue = M5Label('-- %', x=252, y=60, color=0xffffff, font=FONT_MONT_18, parent=scr2)
-labelInTargetValue    = M5Label('-- %', x=252, y=90, color=0xffffff, font=FONT_MONT_18, parent=scr2)
-labelBelowTargetValue = M5Label('-- %', x=252, y=119, color=0xffffff, font=FONT_MONT_18, parent=scr2)
-labelAverageSgValue   = M5Label('-- mg/dl', x=231, y=147, color=0xffffff, font=FONT_MONT_18, parent=scr2)
-
-# Create screen 3
-scr3 = screen.get_new_screen()
-screen.clean_screen(scr3)
-screen.set_screen_bg_color(0x000000,scr3)
-
-# Init labels on screen 3
-
-# Wifi settings
-labelWifi        = M5Label('WIFI', x=31, y=0, color=0x09f31a, font=FONT_MONT_20, parent=scr3)
-labelSsid        = M5Label('SSID', x=52, y=25, color=0xffffff, font=FONT_MONT_14, parent=scr3)
-labelMySsid      = M5Label(wifissid, x=143, y=25, color=0xffffff, font=FONT_MONT_14, parent=scr3)
-
-# Time and date settings
-labelTimeAndDate = M5Label('Time and Date', x=31, y=47, color=0x09f31a, font=FONT_MONT_20, parent=scr3)
-labelNtpServer   = M5Label('NTP server', x=52, y=75, color=0xffffff, font=FONT_MONT_14, parent=scr3)
-labelMyNtpServer = M5Label(ntpserver, x=143, y=75, color=0xffffff, font=FONT_MONT_14, parent=scr3)
-labelTimeZone    = M5Label('Time zone', x=52, y=97, color=0xffffff, font=FONT_MONT_14, parent=scr3)
-labelMyTimeZone  = M5Label(timezone, x=143, y=97, color=0xffffff, font=FONT_MONT_14, parent=scr3)
-
-# Carelink proxy settings
-labelCarelinkProxy = M5Label('Carelink Proxy', x=31, y=124, color=0x09f31a, font=FONT_MONT_20, parent=scr3)
-labelIpAddress   = M5Label('IP address', x=52, y=151, color=0xffffff, font=FONT_MONT_14, parent=scr3)
-labelMyIpAddress = M5Label(proxyaddr, x=143, y=151, color=0xffffff, font=FONT_MONT_14, parent=scr3)
-labelPort        = M5Label('Port', x=52, y=173, color=0xffffff, font=FONT_MONT_14, parent=scr3)
-labelMyPort      = M5Label(proxyport, x=143, y=173, color=0xffffff, font=FONT_MONT_14, parent=scr3)
-
-# Screen 3 button
-btn0 = M5Btn(text='Reset config', x=110, y=200, w=105, h=34, bg_c=0xff0000, text_c=0xffffff, font=FONT_MONT_14, parent=scr3)
-def btn0_wasReleased():
-   # delete NVRAM parameters
-   nvs.esp32.nvs_erase('wifissid')
-   nvs.esp32.nvs_erase('wifipass')
-   # Restart
-   machine.reset()
-
-btn0.released(btn0_wasReleased)
-
-
-#################################################
-#
-# Button handlers
-#
-#################################################
-
-# Init button A
-def buttonA_wasPressed():
-  # global params
-  screen.load_screen(scr1)
-btnA.wasPressed(buttonA_wasPressed)
-
-# Init button B
-def buttonB_wasPressed():
-  # global params
-  screen.load_screen(scr2)
-btnB.wasPressed(buttonB_wasPressed)
-
-# Init button C
-def buttonC_wasPressed():
-  # global params
-  screen.load_screen(scr3)
-btnC.wasPressed(buttonC_wasPressed)
+      do_access_point(DEFAULT_NTP_SERVER,DEFAULT_TIME_ZONE,DEFAULT_PROXY_PORT)
+   else:
+     print("Wifi connected (IP %s, GW %s)" % (wlan.ifconfig()[0], wlan.ifconfig()[2]))
 
 
 #################################################
@@ -654,37 +595,6 @@ btnC.wasPressed(buttonC_wasPressed)
 # Helper functions
 #
 #################################################
-
-def align_text(label,pos,y):
-    if pos=="left":
-        label.set_pos(x=0,y=y)
-    elif pos=="center":
-        label.set_pos(x=160-int(label.get_width()/2),y=y)
-    elif pos=="right":
-        label.set_pos(x=320-label.get_width(),y=y)
-
-
-def time_delta(tm,ntp,timezone):
-   if tm != None and ntp != None:
-      delta_min  = ntp.minute() - tm[4]
-      if delta_min < 0:
-         delta_min += 60
-      #print("delta_min: "+str(delta_min))
-      delta_hour = ntp.hour() - (tm[3]+int(timezone)+dstDelta)
-      if delta_hour < 0:
-         delta_hour += 24
-      #print("delta_hour: "+str(delta_hour))
-      
-      if delta_min == 0 and delta_hour == 0:
-         delta_txt = "Now"
-      elif delta_min > 15 or delta_hour > 1:
-         delta_txt = "No data"
-      else:
-         delta_txt = str(delta_min)+" min ago"
-   else:
-      delta_txt = "---"
-   return delta_txt
-
 
 def reservoir_level(lvl):
    if lvl > 150:
@@ -697,52 +607,6 @@ def reservoir_level(lvl):
       img_lvl = 0    # empty 
    return img_lvl
 
-
-def time_to_calib_progress(cfs,ttc,sst,cst):
-   # TODO: check if screen 1 is active
-   centerX = 112
-   centerY = 17
-   radius  = 16
-   thick   = 4
-   endposfull = 359
-   endpos = int(360*((12-ttc)/12))
-   endpos = min(endpos,endposfull)
-   endpos = max(endpos,0)
-   if (ttc == 255 or cst == "UNKNOWN") and not cfs: # unknown
-      #print("unknown")
-      # full blue circle, question mark
-      imageDrop.set_img_src("res/mm_drop_unk.png")
-      imageDrop.set_pos(106, 8)
-      lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x00cccc,0x00cccc)
-   elif ttc >= 12: 
-      # full green circle, white drop
-      imageDrop.set_img_src("res/mm_drop_white.png")
-      imageDrop.set_pos(105, 8)
-      lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x33cc00,0x33cc00)
-   elif ttc > 3:
-      # decreasing green circle, white drop
-      imageDrop.set_img_src("res/mm_drop_white.png")
-      imageDrop.set_pos(105, 8)
-      lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x33cc00,0x33cc00)
-      lcd.arc(centerX, centerY, radius, thick, 0, endpos,0x000000,0x000000)
-   elif ttc > 0:
-      # decreasing red circle, white drop
-      imageDrop.set_img_src("res/mm_drop_white.png")
-      imageDrop.set_pos(105, 8)
-      lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0xff0000,0xff0000)
-      lcd.arc(centerX, centerY, radius, thick, 0, endpos,0x000000,0x000000)
-   else:
-      if sst == "CALIBRATION_REQUIRED":
-         # no circle, red drop
-         imageDrop.set_img_src("res/mm_drop_red.png")
-         imageDrop.set_pos(100, 0)
-      else:
-         # no circle, white drop
-         imageDrop.set_img_src("res/mm_drop_white.png")
-         imageDrop.set_pos(105, 8)
-      lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x000000,0x000000)
-
-
 def sensor_age_text(rem_hours):
    if rem_hours == 255:
       text = ""
@@ -752,7 +616,6 @@ def sensor_age_text(rem_hours):
       text = str(rem_hours)
    return text
    
-
 def sensor_age_icon(rem_hours, sensor_state):
    if sensor_state == "CHANGE_SENSOR":
       icon = "expired"
@@ -764,6 +627,28 @@ def sensor_age_icon(rem_hours, sensor_state):
       icon = "red"
    return icon
 
+def time_delta():
+   global lastUpdateTm
+   global dstDelta
+   
+   if lastUpdateTm > 0:
+      dt_min = (time.time() - lastUpdateTm)//60
+      if dt_min == 0:
+         dt_txt = "Now"
+      elif dt_min > 15:
+         dt_txt = "No data"
+      else:
+         dt_txt = str(dt_min)+" min ago"
+   else:
+      dt_txt = "---"
+   return dt_txt
+
+
+#################################################
+#
+# Alarm handling functions
+#
+#################################################
 
 def convert_datetimestr_to_epoch(datetimestr):
    # datetime string format is the following:
@@ -782,7 +667,6 @@ def convert_datetimestr_to_epoch(datetimestr):
    except:
       return 0
 
-
 def getFaultStr(faultId):
    try:
       faultStr = faultIdTable[faultIdMapping[faultId]]
@@ -791,18 +675,18 @@ def getFaultStr(faultId):
    print("faultStr = %s" % faultStr)
    return faultStr
 
-
 def handle_alarm(lastAlarm):
    TDELTA_S = 15*60 # 15 min in seconds
    global lastAlarmId
    global lastAlarmMsg
-   
+
    # Delete previous alarm message
    if lastAlarmMsg != None:
-      lastAlarmMsg.delete() 
+      lastAlarmMsg.delete()
       lastAlarmMsg = None
 
    try:
+      print("check for recent alarm")
       # Check for new alarm
       if lastAlarmId != lastAlarm["GUID"]:
          # Check if alarm is recent
@@ -811,64 +695,59 @@ def handle_alarm(lastAlarm):
             msg = getFaultStr(lastAlarm["faultId"])
             if lastAlarmMsg != None:
                lastAlarmMsg.delete()
-            lastAlarmMsg = M5Msgbox(btns_list=None, x=0, y=100, w=None, h=None, parent=scr1)
-            lastAlarmMsg.set_text(msg)
-            
+            lastAlarmMsg = m5ui.M5Msgbox(title=msg, x=0, y=100, w=320, h=40, parent=page1)
+            #lastAlarmMsg.set_text(msg)
+
             # Play alarm sound
             if lastAlarm["type"] == "ALARM":
-               sndfile = "res/sound_alarm.wav"
+               sndfile = "/flash/res/audio/sound_alarm.wav"
             else:
-               sndfile = "res/sound_alert.wav"
-            speaker.playWAV(sndfile, rate=22000)
+               sndfile = "/flash/res/audio/sound_alert.wav"
+            Speaker.playWavFile(sndfile)
          lastAlarmId = lastAlarm["GUID"]
    except:
       pass
-        
-        
+
+
 #################################################
 #
-# Timer definitions
+# Time update handler
 #
 #################################################
 
-@timerSch.event('timer0')
-def ttimer0():
-   global runNtpsync
-   runNtpsync = True
+def handle_ntpsync(ntpserver):
+   # Sync local time via NTP
+   print("sync local time")
+   ntptime.host = ntpserver
+   ntptime.settime()
 
-def handle_ntpsync(ntpserver, timezone):
-   # Periodic timer: sync time via NTP
+def handle_timeupdate():
+   global labelTime
+   global labelLastData
+   global dstDelta
+
    try:
-      ntp = ntptime.client(host=ntpserver, timezone=int(timezone)+dstDelta)
-      #print("time: %02d:%02d (tz:%d, dd:%d)" % (ntp.hour(),ntp.minute(),int(timezone),dstDelta))
-   except:
-      ntp = None
-   return ntp
-
-
-@timerSch.event('timer1')
-def ttimer1():
-   global runTimeupdate
-   runTimeupdate = True
-
-def handle_timeupdate(ntp, timezone):
-   try:
-      # Update display time
-      time = ("%02d:%02d") % (ntp.hour(),ntp.minute())
-      labelTime.set_text(time)
-      align_text(labelTime,"right",0)
-      labelLastData.set_text(time_delta(lastUpdateTm,ntp,timezone))
-      align_text(labelLastData,"center",218)
+      # Update time on screen
+      print("update time on screen")
+      now = time.time() + dstDelta*3600
+      timestr = ("%02d:%02d") % (time.localtime(now)[3:5])
+      labelTime.set_text(timestr)
+      labelTime.align_to(page1, lv.ALIGN.TOP_RIGHT, 0, 0)
+      labelLastData.set_text(time_delta())
+      labelLastData.align_to(page1, lv.ALIGN.BOTTOM_MID, 0, 0)
+      #align_text(labelLastData,"center",218)
    except:
       pass
+    
 
-
-@timerSch.event('timer2')
-def ttimer2():
-   global runPumpdataupdate
-   runPumpdataupdate = True
+#################################################
+#
+# Pump data update handler
+#
+#################################################
 
 def handle_pumpdataupdate(proxyaddr, proxyport):
+   global page1, page1, page2, imageBattery, imageReservoir, imageSensorConn, imageDrop, imageSage, imageShield, imageBanner, labelBglValue, labelBglUnit, labelActInsValue, labelActIns, labelTime, labelLastData, labelSage, timer0, timer1, timer2, timer3
    global lastErrorMsg
    global lastStatusMsg
    global lastUpdateTm
@@ -876,179 +755,297 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
    proxy_url = "http://%s:%s/%s" % (proxyaddr, proxyport, API_URL)
 
    # Update Minimed data
+   print("update Minimed data")
    
    # Get Minimed data from proxy via API
-   # (urequests does not handle timeouts so we do this with an external timer)
-   timerSch.run('timer5', TIMER5_PERIOD_S*1000, 0x01)
    try:
-      r = urequests.request(method='GET', url=proxy_url, headers={})
-   except OSError:
+      r = requests2.get(proxy_url, headers={'Content-Type': 'application/json'}, timeout=20)
+      jdata = r.json()
+      print("status code: %d" % (r.status_code))
+   except:
       r = None
-   timerSch.stop('timer5')
-   if lastErrorMsg != None:
-      lastErrorMsg.delete()
-      lastErrorMsg = None
    
-   if r != None and r.status_code == 200 and r.json() != "":
+   if r != None and r.status_code == 200 and jdata != "":
       try:
-         lastUpdateTm = time.localtime(int(r.json()["lastConduitUpdateServerDateTime"]/1000)) #-NTPCONST)
-         
+         lastUpdateTm = int(jdata["lastConduitUpdateServerDateTime"]//1000)
          # Check for DST
-         dstDelta = 1 if r.json()["clientTimeZoneName"].lower().find("summer")>-1 else 0
+         dstDelta = 1 if jdata["clientTimeZoneName"].lower().find("summer")>-1 else 0
+         print("dstDelta: %d" % dstDelta)
          
          # Check for alarm notification
-         handle_alarm(r.json()["lastAlarm"])
+         handle_alarm(jdata["lastAlarm"])
          
          # Check conduit, medical device in range
-         haveData = r.json()["conduitInRange"] and r.json()["conduitMedicalDeviceInRange"]
+         haveData = jdata["conduitInRange"] and jdata["conduitMedicalDeviceInRange"]
 
          ##### Screen 1 #####
          
          if haveData:
-            imageBattery.set_img_src("res/mm_batt"+str(r.json()["pumpBatteryLevelPercent"])+".png")
-            imageReservoir.set_img_src("res/mm_tank"+str(reservoir_level(r.json()["reservoirRemainingUnits"]))+".png")
-            imageSage.set_img_src("res/mm_sage_"+sensor_age_icon(r.json()["sensorDurationHours"],r.json()["sensorState"])+".png")
-            labelSage.set_text(sensor_age_text(r.json()["sensorDurationHours"]))
+            imageBattery.set_image("/flash/res/img/mm_batt"+str(jdata["pumpBatteryLevelPercent"])+".png")
+            imageReservoir.set_image("/flash/res/img/mm_tank"+str(reservoir_level(jdata["reservoirRemainingUnits"]))+".png")
+            imageSage.set_image("/flash/res/img/mm_sage_"+sensor_age_icon(jdata["sensorDurationHours"],jdata["sensorState"])+".png")
+            labelSage.set_text(sensor_age_text(jdata["sensorDurationHours"]))
          else:
-            imageBattery.set_img_src("res/mm_batt_unk.png")
-            imageReservoir.set_img_src("res/mm_tank_unk.png")
-            imageSage.set_img_src("res/mm_sage_unk.png")
+            imageBattery.set_image("/flash/res/img/mm_batt_unk.png")
+            imageReservoir.set_image("/flash/res/img/mm_tank_unk.png")
+            imageSage.set_image("/flash/res/img/mm_sage_unk.png")
             labelSage.set_text("")
          
-         if r.json()["conduitSensorInRange"]:
-            imageSensorConn.set_img_src("res/mm_sensor_connection_ok.png")
+         if jdata["conduitSensorInRange"]:
+            imageSensorConn.set_image("/flash/res/img/mm_sensor_connection_ok.png")
          else:
-            imageSensorConn.set_img_src("res/mm_sensor_connection_nok.png")
+            imageSensorConn.set_image("/flash/res/img/mm_sensor_connection_nok.png")
          
-         time_to_calib_progress(r.json()["calFreeSensor"],r.json()["timeToNextCalibHours"],r.json()["sensorState"],r.json()["calibStatus"])
+         #time_to_calib_progress(jdata["calFreeSensor"],jdata["timeToNextCalibHours"],jdata["sensorState"],jdata["calibStatus"])
 
-         if not haveData or r.json()["therapyAlgorithmState"]["autoModeShieldState"] == "FEATURE_OFF":
-            imageShield.set_hidden(True)
+         if not haveData or jdata["therapyAlgorithmState"]["autoModeShieldState"] == "FEATURE_OFF":
+            imageShield.set_flag(lv.obj.FLAG.HIDDEN, True)
          else:
-            imageShield.set_img_src("res/mm_shield_"+r.json()["lastSGTrend"].lower()+".png")
-            imageShield.set_hidden(False)
-         lastSG = r.json()["lastSG"]["sg"]
+            imageShield.set_image("/flash/res/img/mm_shield_"+jdata["lastSGTrend"].lower()+".png")
+            imageShield.set_flag(lv.obj.FLAG.HIDDEN, False)
+         lastSG = jdata["lastSG"]["sg"]
          labelBglValue.set_text(str(lastSG) if lastSG > 0 else "--")
-         align_text(labelBglValue,"center",90)
+         labelBglValue.align_to(page1, lv.ALIGN.CENTER, 0, 0)
+         #align_text(labelBglValue,"center",90)
          
          if haveData:
-            labelActInsValue.set_text(str(round(r.json()["activeInsulin"]["amount"],1))+" U")
+            labelActInsValue.set_text(str(round(jdata["activeInsulin"]["amount"],1))+" U")
          else:
             labelActInsValue.set_text("-- U")
-         align_text(labelActInsValue,"right",173)
+         labelActInsValue.align_to(page1, lv.ALIGN.TOP_RIGHT, 0, 173)
+         #align_text(labelActInsValue,"right",173)
       except:
          pass
       
       try:
-         systemStatus = r.json()["systemStatusMessage"]
+         systemStatus = jdata["systemStatusMessage"]
          if systemStatus == "NO_ERROR_MESSAGE" or systemStatus == None:
             raise Exception
          else:
             if lastStatusMsg == None:
-               lastStatusMsg = M5Msgbox(btns_list=None, x=0, y=50, w=None, h=None, parent=scr1)
-            lastStatusMsg.set_text(systemStatus.replace("_"," "))
+               status_txt = systemStatus.replace("_"," ")
+               lastStatusMsg = m5ui.M5Msgbox(title = status_txt, x=0, y=50, w=320, h=40, parent=page1)
+            #lastStatusMsg.set_text(systemStatus.replace("_"," "))
       except:
          if lastStatusMsg != None:
             lastStatusMsg.delete()
             lastStatusMsg = None
 
       try:
-         pumpBanner = r.json()["pumpBannerState"][0]["type"]
-         imageBanner.set_img_src("res/mm_banner_"+pumpBanner.lower()+".png")
-         imageBanner.set_hidden(False)
+         pumpBanner = jdata["pumpBannerState"][0]["type"]
+         imageBanner.set_image("/flash/res/img/mm_banner_"+pumpBanner.lower()+".png")
+         imageBanner.set_flag(lv.obj.FLAG.HIDDEN, False)
       except:
-         imageBanner.set_hidden(True)
-         
+         imageBanner.set_flag(lv.obj.FLAG.HIDDEN, True)
+
       ##### Screen 2 #####
       try:
-         labelAboveTargetValue.set_text(str(r.json()["aboveHyperLimit"])+" %")
-         labelInTargetValue.set_text(str(r.json()["timeInRange"])+" %")
-         labelBelowTargetValue.set_text(str(r.json()["belowHypoLimit"])+" %")
-         labelAverageSgValue.set_text(str(r.json()["averageSG"])+" mg/dl")
+         labelAboveTargetValue.set_text(str(jdata["aboveHyperLimit"])+" %")
+         labelInTargetValue.set_text(str(jdata["timeInRange"])+" %")
+         labelBelowTargetValue.set_text(str(jdata["belowHypoLimit"])+" %")
+         labelAverageSgValue.set_text(str(jdata["averageSG"])+" mg/dl")
       except:
          pass
-   
-
-@timerSch.event('timer3')
-def ttimer3():
-   # Periodic timer: check touch event
-   handle_touchevent()
-
-def handle_touchevent():
-   global lastAlarmMsg
-   if touch.status():
-      if lastAlarmMsg != None:
-         lastAlarmMsg.delete() 
-         lastAlarmMsg = None
-      screen.set_screen_brightness(100)
-      timerSch.run('timer4', TIMER4_PERIOD_S*1000, 0x01)
-
-
-@timerSch.event('timer4')
-def ttimer4():
-   # One shot timer: reset screen brightness
-   screen.set_screen_brightness(40)
-
-
-@timerSch.event('timer5')
-def ttimer5():
-   # One shot timer: urequests watchdog
-   # Just issue a warning nessage
-   global lastErrorMsg
-   if lastErrorMsg != None:
-      lastErrorMsg.delete()
-      lastErrorMsg = None
-   lastErrorMsg = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None, parent=scr1)
-   lastErrorMsg.set_text("ERROR: urequests is stuck, reset device")
 
 
 #################################################
 #
-# Init
+# Button event handlers
 #
 #################################################
 
-ntp = None
-msgbox = None
-while ntp == None:
-   wait_ms(1000)
-   ntp = handle_ntpsync(ntpserver, timezone)
-   if ntp == None and msgbox == None:
-      msgbox = M5Msgbox(btns_list=None, x=0, y=0, w=None, h=None, parent=scr1)
-      msgbox.set_text("Trying to synch time and date ...")
-if msgbox != None:
-   msgbox.delete()
+def btnA_wasPressed_event(state):
+   global page1
+   page1.screen_load()
 
-print("Time and date successfully synched")
+def btnB_wasPressed_event(state):
+   global page1
+   page2.screen_load()
 
-# Init timers
+def btnC_wasPressed_event(state):
+   global page2
+   page3.screen_load()
 
-# Timer 0: 1200 sec (periodic) // ntpsync
-TIMER0_PERIOD_S = 1200
-timerSch.run('timer0', TIMER0_PERIOD_S*1000, 0x00)
+def btn0_event_handler(event_struct):
+   event = event_struct.code
+   print("btn0 event: %d" % event)
+   if event == lv.EVENT.RELEASED:
+      # delete NVRAM parameters
+      print("delete NVRAM parameters")
+      nvs = esp32.NVS("mmmon")
+      nvs.erase_key('wifissid')
+      nvs.erase_key('wifipass')
+      nvs.commit()
+      # Restart
+      print("restarting ...")
+      machine.reset()
 
-# Timer 1: 10 sec (periodic) // timeupdate
-TIMER1_PERIOD_S = 10
-timerSch.run('timer1', TIMER1_PERIOD_S*1000, 0x00)
 
-# Timer 2: 60 sec (periodic) // pumpdataupdate
-TIMER2_PERIOD_S = 60
-timerSch.run('timer2', TIMER2_PERIOD_S*1000, 0x00)
+#################################################
+#
+# Page event handlers
+#
+#################################################
 
-# Timer 3: 0.2 sec (periodic) // touchevent
-TIMER3_PERIOD_S = 0.2
-timerSch.run('timer3', int(TIMER3_PERIOD_S*1000), 0x00)
+def page_event_handler(event_struct):
+   event = event_struct.code
+   print("page event: %d" % event)
+   if event == lv.EVENT.PRESSED:
+      M5.Lcd.setBrightness(100)
+      timer3.init(mode=Timer.ONE_SHOT, period=TIMER3_PERIOD_S*1000, callback=timer3_cb)
+   return
 
-# Timer 4: 10 sec (one shot) // reset screen brightness
-TIMER4_PERIOD_S = 10
 
-# Timer 5: 60 sec (one shot) // urequest watchdog
-TIMER5_PERIOD_S = 60
+#################################################
+#
+# Timer event handlers
+#
+#################################################
 
-# Run some timer functions immediately to init
-ttimer0()
-ttimer1()
-ttimer2()
+def timer0_cb(t):
+   global runNtpsync
+   runNtpsync = True
+   print("timer0")
+
+def timer1_cb(t):
+   global runTimeupdate
+   runTimeupdate = True
+   print("timer1")
+
+def timer2_cb(t):
+   global runPumpdataupdate
+   runPumpdataupdate = True
+   print("timer2")
+
+def timer3_cb(t):
+   M5.Lcd.setBrightness(50)
+   print("timer3")
+
+
+#################################################
+#
+# Initialization
+#
+#################################################
+
+def setup():
+   global page0, page1, page2, page3, imageBattery, imageReservoir, imageSensorConn, imageDrop, imageSage, imageShield, imageBanner, labelBglValue, labelBglUnit, labelActInsValue, labelActIns, labelTime, labelLastData, labelSage, labelAboveTargetValue, labelInTargetValue, labelBelowTargetValue, labelAverageSgValue, timer0, timer1, timer2, timer3
+
+   global ntpserver
+   global proxyaddr
+   global proxyport
+
+   M5.begin()
+   m5ui.init()
+
+   # Create and load initial page
+   page0 = m5ui.M5Page(bg_c=0x000000)
+   page0.screen_load()
+  
+   # Read config from EEPROM
+   wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone = read_config()
+   print("wifissid: %s, wifipass: %s, proxyaddr: %s, proxyport: %s, ntpserver: %s, timezone: %s\n" % (wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone))
+
+   # Wifi connection
+   wlan_connect(wifissid, wifipass)
+
+   # Create pages
+   page1 = m5ui.M5Page(bg_c=0x000000)
+   page2 = m5ui.M5Page(bg_c=0x000000)
+   page3 = m5ui.M5Page(bg_c=0x000000)
+   M5.Lcd.setBrightness(50)
+
+   # Images on page 1
+   imageBattery     = m5ui.M5Image("/flash/res/img/mm_batt_unk.png", x=6, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageReservoir   = m5ui.M5Image("/flash/res/img/mm_tank_unk.png", x=40, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageSensorConn  = m5ui.M5Image("/flash/res/img/mm_sensor_connection_nok.png", x=68, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageDrop        = m5ui.M5Image("/flash/res/img/mm_drop_unk.png", x=105, y=8, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageSage        = m5ui.M5Image("/flash/res/img/mm_sage_unk.png", x=135, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageShield      = m5ui.M5Image("/flash/res/img/mm_shield_none.png", x=65, y=33, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageBanner      = m5ui.M5Image("/flash/res/img/mm_banner_delivery_suspend.png", x=40, y=145, rotation=0, scale_x=1, scale_y=1, parent=page1)
+
+   # Labels on page 1
+   labelBglValue    = m5ui.M5Label("--", x=140, y=90, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_48, parent=page1)
+   labelBglUnit     = m5ui.M5Label("mg/dL", x=133, y=145, text_c=0xffffff, bg_c=0x89abeb, bg_opa=0, font=lv.font_montserrat_16, parent=page1)
+   labelActInsValue = m5ui.M5Label("-- U", x=274, y=163, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_24, parent=page1)
+   labelActIns      = m5ui.M5Label("Act Insulin", x=232, y=200, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_16, parent=page1)
+   labelTime        = m5ui.M5Label("--:--", x=276, y=0, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_24, parent=page1)
+   labelLastData    = m5ui.M5Label("--", x=150, y=211, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_24, parent=page1)
+   labelSage        = m5ui.M5Label('', x=144, y=8, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_14, parent=page1)
+
+   # Labels on page 2
+   labelScreen2Title     = m5ui.M5Label('In target range (last 24h)', x=9, y=0, text_c=0xffffff, font=lv.font_montserrat_24, parent=page2)
+   labelAboveTarget      = m5ui.M5Label('Above target 180 mg/dl:', x=9, y=60, text_c=0xffc418, font=lv.font_montserrat_18, parent=page2)
+   labelInTarget         = m5ui.M5Label('In target:', x=9, y=90, text_c=0x45db49, font=lv.font_montserrat_18, parent=page2)
+   labelBelowTarget      = m5ui.M5Label('Below target 70 mg/dl:', x=9, y=119, text_c=0xff0000, font=lv.font_montserrat_18, parent=page2)
+   labelAgerageSg        = m5ui.M5Label('Average SG:', x=9, y=147, text_c=0xa0a0a0, font=lv.font_montserrat_18, parent=page2)
+   labelAboveTargetValue = m5ui.M5Label('-- %', x=252, y=60, text_c=0xffffff, font=lv.font_montserrat_18, parent=page2)
+   labelInTargetValue    = m5ui.M5Label('-- %', x=252, y=90, text_c=0xffffff, font=lv.font_montserrat_18, parent=page2)
+   labelBelowTargetValue = m5ui.M5Label('-- %', x=252, y=119, text_c=0xffffff, font=lv.font_montserrat_18, parent=page2)
+   labelAverageSgValue   = m5ui.M5Label('-- mg/dl', x=231, y=147, text_c=0xffffff, font=lv.font_montserrat_18, parent=page2)
+
+   # Labels on page 3
+
+   # Wifi settings
+   labelWifi        = m5ui.M5Label('WIFI', x=31, y=0, text_c=0x09f31a, font=lv.font_montserrat_18, parent=page3)
+   labelSsid        = m5ui.M5Label('SSID', x=52, y=25, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
+   labelMySsid      = m5ui.M5Label(wifissid, x=143, y=25, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
+
+   # Time and date settings
+   labelTimeAndDate = m5ui.M5Label('Time and Date', x=31, y=47, text_c=0x09f31a, font=lv.font_montserrat_18, parent=page3)
+   labelNtpServer   = m5ui.M5Label('NTP server', x=52, y=75, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
+   labelMyNtpServer = m5ui.M5Label(ntpserver, x=143, y=75, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
+   labelTimeZone    = m5ui.M5Label('Time zone', x=52, y=97, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
+   labelMyTimeZone  = m5ui.M5Label(timezone, x=143, y=97, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
+
+   # Carelink proxy settings
+   labelCarelinkProxy = m5ui.M5Label('Carelink Proxy', x=31, y=124, text_c=0x09f31a, font=lv.font_montserrat_18, parent=page3)
+   labelIpAddress   = m5ui.M5Label('IP address', x=52, y=151, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
+   labelMyIpAddress = m5ui.M5Label(proxyaddr, x=143, y=151, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
+   labelPort        = m5ui.M5Label('Port', x=52, y=173, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
+   labelMyPort      = m5ui.M5Label(proxyport, x=143, y=173, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
+
+   # Button on page 3
+   btn0 = m5ui.M5Button(text='Reset config', x=110, y=200, bg_c=0xff0000, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
+   btn0.add_event_cb(btn0_event_handler, lv.EVENT.RELEASED, None)
+
+   # Init button event handlers
+   BtnA.setCallback(type=BtnA.CB_TYPE.WAS_PRESSED, cb=btnA_wasPressed_event)
+   BtnB.setCallback(type=BtnB.CB_TYPE.WAS_PRESSED, cb=btnB_wasPressed_event)
+   BtnC.setCallback(type=BtnC.CB_TYPE.WAS_PRESSED, cb=btnC_wasPressed_event)
+
+   # Init timers
+
+   # Periodic timer: sync time via NTP
+   timer0 = Timer(0)
+   timer0.init(mode=Timer.PERIODIC, period=TIMER0_PERIOD_S*1000, callback=timer0_cb)
+
+   # Periodic timer: update time on screen
+   timer1 = Timer(1)
+   timer1.init(mode=Timer.PERIODIC, period=TIMER1_PERIOD_S*1000, callback=timer1_cb)
+
+   # Periodic timer: update pump data on screen
+   timer2 = Timer(2)
+   timer2.init(mode=Timer.PERIODIC, period=TIMER2_PERIOD_S*1000, callback=timer2_cb)
+
+   # Oneshot timer: reset screen brightness
+   timer3 = Timer(3)
+
+   # Init touch event detection for all pages
+   page1.add_event_cb(page_event_handler, lv.EVENT.PRESSED, None)
+   page2.add_event_cb(page_event_handler, lv.EVENT.PRESSED, None)
+   page3.add_event_cb(page_event_handler, lv.EVENT.PRESSED, None)
+
+   # Init time and date
+   time.timezone(timezone)
+   handle_ntpsync(ntpserver)
+   handle_timeupdate()
+
+   # Get first data from pump
+   handle_pumpdataupdate(proxyaddr, proxyport)
+
+   # Load page 1
+   page1.screen_load()
 
 
 #################################################
@@ -1056,16 +1053,44 @@ ttimer2()
 # Main loop
 #
 #################################################
-while True:
+
+def loop():
+   global proxyaddr
+   global proxyport
+   global ntpserver
+   global runNtpsync
+   global runTimeupdate
+   global runPumpdataupdate
+
+   M5.update()
+
    # Run handlers as requested
    if runPumpdataupdate:
       handle_pumpdataupdate(proxyaddr, proxyport)
       runPumpdataupdate = False
    if runNtpsync:
-      ntp = handle_ntpsync(ntpserver, timezone)
+      handle_ntpsync(ntpserver)
       runNtpsync = False
    if runTimeupdate:
-      handle_timeupdate(ntp, timezone)
+      handle_timeupdate()
       runTimeupdate = False
-   
-   wait_ms(1000)
+  
+
+#################################################
+#
+# Program entrypoint
+#
+#################################################
+
+if __name__ == '__main__':
+   try:
+      setup()
+      while True:
+         loop()
+   except (Exception, KeyboardInterrupt) as e:
+      try:
+         m5ui.deinit()
+         from utility import print_error_msg
+         print_error_msg(e)
+      except ImportError:
+         print("please update to latest firmware")
