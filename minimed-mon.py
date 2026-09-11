@@ -128,6 +128,8 @@ imageDrop = None
 imageSage = None
 imageShield = None
 imageBanner = None
+imagePower  = None
+imageWifi   = None
 
 # Labels
 labelBglValue = None
@@ -154,7 +156,7 @@ lastApMsg     = None
 runNtpsync        = False
 runTimeupdate     = False
 runPumpdataupdate = False
-
+wifi          = None
 
 # Fault ID mapping
 faultIdMapping = {
@@ -282,7 +284,7 @@ faultIdMapping = {
    "811": "810",
    "809": "809",
    "062": "062",
-   "070": "062",
+   "070": "062", # "70" : Insulin Delivery Stopped
    "071": "062",
    "072": "062",
    "108": "062",
@@ -316,6 +318,7 @@ faultIdTable = {
    "062": "New Notification Received From Pump",
    "066": "No Reservoir Detected During Infusion Set Change",
    "069": "Loading Incomplete During Infusion Set Change",
+   #"070": "Incomplete Fill Cannula Step"
    "073": "Replace Pump Battery Now",
    "077": "Pump Settings Error. Delivery Stopped",
    "084": "Pump Battery Removed. Replace Battery",
@@ -595,7 +598,8 @@ def wlan_connect(wifissid, wifipass):
       # Start access point for configuration
       do_access_point(DEFAULT_NTP_SERVER,DEFAULT_TIME_ZONE,DEFAULT_PROXY_PORT)
    else:
-     print("Wifi connected (IP %s, GW %s)" % (wlan.ifconfig()[0], wlan.ifconfig()[2]))
+      print("Wifi connected (IP %s, GW %s, RSSI %d)" % (wlan.ifconfig()[0], wlan.ifconfig()[2], wlan.status("rssi")))
+   return wlan
 
 
 #################################################
@@ -742,13 +746,16 @@ def handle_alarm(lastAlarm):
       # Check for new alarm
       if lastAlarmId != lastAlarm["GUID"]:
          # Check if alarm is recent
-         if convert_datetimestr_to_epoch(lastAlarm["dateTime"]) > (time.time() - TDELTA_S):
+         atime = convert_datetimestr_to_epoch(lastAlarm["dateTime"])
+         now = time.time() + dstDelta*3600
+         print("last atime is %d" % atime)
+         print("local time is %d" % now)
+         if (now - atime) < TDELTA_S:
             # Show alarm message
             msg = getFaultStr(lastAlarm["faultId"])
             if lastAlarmMsg != None:
                lastAlarmMsg.delete()
             lastAlarmMsg = m5ui.M5Msgbox(title=msg, x=0, y=100, w=SCREEN_WIDTH, h=40, parent=page1)
-            #lastAlarmMsg.set_text(msg)
 
             # Play alarm sound
             if lastAlarm["type"] == "ALARM":
@@ -794,7 +801,37 @@ def handle_timeupdate():
       #align_text(labelLastData,"center",218)
    except:
       pass
-    
+
+
+#################################################
+#
+# Device status update handler
+#
+#################################################
+
+def handle_devstatusupdate():
+
+   global imagePower
+   global imageWifi
+
+   # Show or hide power icon
+   imagePower.set_flag(lv.obj.FLAG.HIDDEN, not Power.isCharging())
+
+   # Set Wifi icon according to signal strength
+   rssi = wlan.status("rssi")
+   if rssi > -50:
+      bars = 4
+   elif rssi > -60:
+      bars = 3
+   elif rssi > -70:
+      bars = 2
+   elif rssi > -80:
+      bars = 1
+   else:
+      bars = 0
+
+   imageWifi.set_image(FLASH_IMG+("icon_wifi%d.jpg"%bars))
+
 
 #################################################
 #
@@ -985,11 +1022,12 @@ def timer3_cb(t):
 #################################################
 
 def setup():
-   global page0, page1, page2, page3, imageBattery, imageReservoir, imageSensorConn, imageDrop, imageSage, imageShield, imageBanner, labelBglValue, labelBglUnit, labelActInsValue, labelActIns, labelTime, labelLastData, labelSage, labelAboveTargetValue, labelInTargetValue, labelBelowTargetValue, labelAverageSgValue, timer0, timer1, timer2, timer3
+   global page0, page1, page2, page3, imageBattery, imageReservoir, imageSensorConn, imageDrop, imageSage, imageShield, imageBanner, imageWifi, imagePower, labelBglValue, labelBglUnit, labelActInsValue, labelActIns, labelTime, labelLastData, labelSage, labelAboveTargetValue, labelInTargetValue, labelBelowTargetValue, labelAverageSgValue, timer0, timer1, timer2, timer3
 
    global ntpserver
    global proxyaddr
    global proxyport
+   global wlan
 
    # Init M5 libraries
    M5.begin()
@@ -1010,7 +1048,7 @@ def setup():
    print("wifissid: %s, wifipass: %s, proxyaddr: %s, proxyport: %s, ntpserver: %s, timezone: %s\n" % (wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone))
 
    # Wifi connection
-   wlan_connect(wifissid, wifipass)
+   wlan = wlan_connect(wifissid, wifipass)
 
    # Create pages
    page1 = m5ui.M5Page(bg_c=0x000000)
@@ -1025,7 +1063,9 @@ def setup():
    imageDrop        = m5ui.M5Image(FLASH_IMG+"mm_drop_unk.jpg", x=105, y=8, rotation=0, scale_x=1, scale_y=1, parent=page1)
    imageSage        = m5ui.M5Image(FLASH_IMG+"mm_sage_unk.jpg", x=135, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
    imageShield      = m5ui.M5Image(FLASH_IMG+"mm_shield_none.jpg", x=65, y=33, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imageBanner      = m5ui.M5Image(FLASH_IMG+"mm_banner_delivery_suspend.jpg", x=40, y=145, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageBanner      = m5ui.M5Image(FLASH_IMG+"mm_banner_delivery_suspend.jpg", x=30, y=145, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageWifi        = m5ui.M5Image(FLASH_IMG+"icon_wifi0.jpg", x=228, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imagePower       = m5ui.M5Image(FLASH_IMG+"icon-power.jpg", x=196, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
 
    # Labels on page 1
    labelBglValue    = m5ui.M5Label("--", x=140, y=90, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_48, parent=page1)
@@ -1136,6 +1176,7 @@ def loop():
       runNtpsync = False
    if runTimeupdate:
       handle_timeupdate()
+      handle_devstatusupdate()
       runTimeupdate = False
   
 
