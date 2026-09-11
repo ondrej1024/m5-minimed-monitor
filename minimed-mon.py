@@ -94,10 +94,18 @@ API_URL     = "carelink/nohistory"
 AP_SSID     = "M5_MINIMED_MON"
 AP_ADDR     = "192.168.4.1"
 
-TIMER0_PERIOD_S = 1200
-TIMER1_PERIOD_S = 10
-TIMER2_PERIOD_S = 60
-TIMER3_PERIOD_S = 10
+FLASH_IMG = "/flash/res/img/"
+FLASH_WAV = "/flash/res/audio/"
+
+SCREEN_WIDTH  = 320
+SCREEN_HEIGHT = 240
+
+SPEAKER_VOLUME = 180 # from 0 to 255
+
+TIMER0_PERIOD_S = 3600 # NTP time sync
+TIMER1_PERIOD_S = 10   # Screen time update
+TIMER2_PERIOD_S = 60   # Screen pump data update
+TIMER3_PERIOD_S = 15   # Bright screen timeout
 
 
 #################################################
@@ -430,9 +438,9 @@ def do_ap_msg(msg):
       lastApMsg.delete()
       lastApMsg = None
    if msg:
-      lastApMsg = m5ui.M5Msgbox(title=msg, x=0, y=100, w=320, h=50, parent=page0)
+      lastApMsg = m5ui.M5Msgbox(title=msg, x=0, y=100, w=SCREEN_WIDTH, h=50, parent=page0)
       #lastApMsg.set_text(msg)
-      sndfile = "/flash/res/audio/sound_alert.wav"
+      sndfile = FLASH_WAV+"sound_alert.wav"
       Speaker.playWavFile(sndfile)
 
 
@@ -607,6 +615,50 @@ def reservoir_level(lvl):
       img_lvl = 0    # empty 
    return img_lvl
 
+def time_to_calib_progress(cfs,ttc,sst,cst):
+   # FIXME: draw progress circle
+   centerX = 112
+   centerY = 17
+   radius  = 16
+   thick   = 4
+   #endposfull = 359
+   #endpos = int(360*((12-ttc)/12))
+   #endpos = min(endpos,endposfull)
+   #endpos = max(endpos,0)
+   if (ttc == 255 or cst == "UNKNOWN") and not cfs: # unknown
+      #print("unknown")
+      # full blue circle, question mark
+      imageDrop.set_image(FLASH_IMG+"mm_drop_unk.jpg")
+      imageDrop.set_pos(106, 8)
+      #lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x00cccc,0x00cccc)
+   elif ttc >= 12:
+      # full green circle, white drop
+      imageDrop.set_image(FLASH_IMG+"mm_drop_white.jpg")
+      imageDrop.set_pos(105, 8)
+      #lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x33cc00,0x33cc00)
+   elif ttc > 3:
+      # decreasing green circle, white drop
+      imageDrop.set_image(FLASH_IMG+"mm_drop_white.jpg")
+      imageDrop.set_pos(105, 8)
+      #lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x33cc00,0x33cc00)
+      #lcd.arc(centerX, centerY, radius, thick, 0, endpos,0x000000,0x000000)
+   elif ttc > 0:
+      # decreasing red circle, white drop
+      imageDrop.set_image(FLASH_IMG+"mm_drop_white.jpg")
+      imageDrop.set_pos(105, 8)
+      #lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0xff0000,0xff0000)
+      #lcd.arc(centerX, centerY, radius, thick, 0, endpos,0x000000,0x000000)
+   else:
+      if sst == "CALIBRATION_REQUIRED":
+         # no circle, red drop
+         imageDrop.set_image(FLASH_IMG+"mm_drop_red.jpg")
+         imageDrop.set_pos(100, 0)
+      else:
+         # no circle, white drop
+         imageDrop.set_image(FLASH_IMG+"mm_drop_white.jpg")
+         imageDrop.set_pos(105, 8)
+      #lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x000000,0x000000)
+
 def sensor_age_text(rem_hours):
    if rem_hours == 255:
       text = ""
@@ -695,14 +747,14 @@ def handle_alarm(lastAlarm):
             msg = getFaultStr(lastAlarm["faultId"])
             if lastAlarmMsg != None:
                lastAlarmMsg.delete()
-            lastAlarmMsg = m5ui.M5Msgbox(title=msg, x=0, y=100, w=320, h=40, parent=page1)
+            lastAlarmMsg = m5ui.M5Msgbox(title=msg, x=0, y=100, w=SCREEN_WIDTH, h=40, parent=page1)
             #lastAlarmMsg.set_text(msg)
 
             # Play alarm sound
             if lastAlarm["type"] == "ALARM":
-               sndfile = "/flash/res/audio/sound_alarm.wav"
+               sndfile = FLASH_WAV+"sound_alarm.wav"
             else:
-               sndfile = "/flash/res/audio/sound_alert.wav"
+               sndfile = FLASH_WAV+"sound_alert.wav"
             Speaker.playWavFile(sndfile)
          lastAlarmId = lastAlarm["GUID"]
    except:
@@ -719,7 +771,11 @@ def handle_ntpsync(ntpserver):
    # Sync local time via NTP
    print("sync local time")
    ntptime.host = ntpserver
-   ntptime.settime()
+   try:
+      ntptime.settime()
+   except:
+      # TODO: show somehow that time is not synced
+      pass
 
 def handle_timeupdate():
    global labelTime
@@ -781,27 +837,27 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
          ##### Screen 1 #####
          
          if haveData:
-            imageBattery.set_image("/flash/res/img/mm_batt"+str(jdata["pumpBatteryLevelPercent"])+".png")
-            imageReservoir.set_image("/flash/res/img/mm_tank"+str(reservoir_level(jdata["reservoirRemainingUnits"]))+".png")
-            imageSage.set_image("/flash/res/img/mm_sage_"+sensor_age_icon(jdata["sensorDurationHours"],jdata["sensorState"])+".png")
+            imageBattery.set_image(FLASH_IMG+"mm_batt"+str(jdata["pumpBatteryLevelPercent"])+".jpg")
+            imageReservoir.set_image(FLASH_IMG+"mm_tank"+str(reservoir_level(jdata["reservoirRemainingUnits"]))+".jpg")
+            imageSage.set_image(FLASH_IMG+"mm_sage_"+sensor_age_icon(jdata["sensorDurationHours"],jdata["sensorState"])+".jpg")
             labelSage.set_text(sensor_age_text(jdata["sensorDurationHours"]))
          else:
-            imageBattery.set_image("/flash/res/img/mm_batt_unk.png")
-            imageReservoir.set_image("/flash/res/img/mm_tank_unk.png")
-            imageSage.set_image("/flash/res/img/mm_sage_unk.png")
+            imageBattery.set_image(FLASH_IMG+"mm_batt_unk.jpg")
+            imageReservoir.set_image(FLASH_IMG+"mm_tank_unk.jpg")
+            imageSage.set_image(FLASH_IMG+"mm_sage_unk.jpg")
             labelSage.set_text("")
          
          if jdata["conduitSensorInRange"]:
-            imageSensorConn.set_image("/flash/res/img/mm_sensor_connection_ok.png")
+            imageSensorConn.set_image(FLASH_IMG+"mm_sensor_connection_ok.jpg")
          else:
-            imageSensorConn.set_image("/flash/res/img/mm_sensor_connection_nok.png")
+            imageSensorConn.set_image(FLASH_IMG+"mm_sensor_connection_nok.jpg")
          
-         #time_to_calib_progress(jdata["calFreeSensor"],jdata["timeToNextCalibHours"],jdata["sensorState"],jdata["calibStatus"])
+         time_to_calib_progress(jdata["calFreeSensor"],jdata["timeToNextCalibHours"],jdata["sensorState"],jdata["calibStatus"])
 
          if not haveData or jdata["therapyAlgorithmState"]["autoModeShieldState"] == "FEATURE_OFF":
             imageShield.set_flag(lv.obj.FLAG.HIDDEN, True)
          else:
-            imageShield.set_image("/flash/res/img/mm_shield_"+jdata["lastSGTrend"].lower()+".png")
+            imageShield.set_image(FLASH_IMG+"mm_shield_"+jdata["lastSGTrend"].lower()+".jpg")
             imageShield.set_flag(lv.obj.FLAG.HIDDEN, False)
          lastSG = jdata["lastSG"]["sg"]
          labelBglValue.set_text(str(lastSG) if lastSG > 0 else "--")
@@ -822,10 +878,10 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
          if systemStatus == "NO_ERROR_MESSAGE" or systemStatus == None:
             raise Exception
          else:
-            if lastStatusMsg == None:
-               status_txt = systemStatus.replace("_"," ")
-               lastStatusMsg = m5ui.M5Msgbox(title = status_txt, x=0, y=50, w=320, h=40, parent=page1)
-            #lastStatusMsg.set_text(systemStatus.replace("_"," "))
+            if lastStatusMsg != None:
+               lastStatusMsg.delete()
+            status_txt = systemStatus.replace("_"," ")
+            lastStatusMsg = m5ui.M5Msgbox(title = status_txt, x=0, y=50, w=SCREEN_WIDTH, h=40, parent=page1)
       except:
          if lastStatusMsg != None:
             lastStatusMsg.delete()
@@ -833,7 +889,7 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
 
       try:
          pumpBanner = jdata["pumpBannerState"][0]["type"]
-         imageBanner.set_image("/flash/res/img/mm_banner_"+pumpBanner.lower()+".png")
+         imageBanner.set_image(FLASH_IMG+"mm_banner_"+pumpBanner.lower()+".jpg")
          imageBanner.set_flag(lv.obj.FLAG.HIDDEN, False)
       except:
          imageBanner.set_flag(lv.obj.FLAG.HIDDEN, True)
@@ -935,12 +991,19 @@ def setup():
    global proxyaddr
    global proxyport
 
+   # Init M5 libraries
    M5.begin()
    m5ui.init()
 
+   # Init speaker
+   Speaker.begin()
+   Speaker.setVolume(SPEAKER_VOLUME)
+
    # Create and load initial page
    page0 = m5ui.M5Page(bg_c=0x000000)
+   m5ui.M5Label("M5 Minimed Mon "+VERSION, x=0, y=0, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_24, parent=page0)
    page0.screen_load()
+   time.sleep_ms(1000)
   
    # Read config from EEPROM
    wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone = read_config()
@@ -956,13 +1019,13 @@ def setup():
    M5.Lcd.setBrightness(50)
 
    # Images on page 1
-   imageBattery     = m5ui.M5Image("/flash/res/img/mm_batt_unk.png", x=6, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imageReservoir   = m5ui.M5Image("/flash/res/img/mm_tank_unk.png", x=40, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imageSensorConn  = m5ui.M5Image("/flash/res/img/mm_sensor_connection_nok.png", x=68, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imageDrop        = m5ui.M5Image("/flash/res/img/mm_drop_unk.png", x=105, y=8, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imageSage        = m5ui.M5Image("/flash/res/img/mm_sage_unk.png", x=135, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imageShield      = m5ui.M5Image("/flash/res/img/mm_shield_none.png", x=65, y=33, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imageBanner      = m5ui.M5Image("/flash/res/img/mm_banner_delivery_suspend.png", x=40, y=145, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageBattery     = m5ui.M5Image(FLASH_IMG+"mm_batt_unk.jpg", x=6, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageReservoir   = m5ui.M5Image(FLASH_IMG+"mm_tank_unk.jpg", x=40, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageSensorConn  = m5ui.M5Image(FLASH_IMG+"mm_sensor_connection_nok.jpg", x=68, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageDrop        = m5ui.M5Image(FLASH_IMG+"mm_drop_unk.jpg", x=105, y=8, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageSage        = m5ui.M5Image(FLASH_IMG+"mm_sage_unk.jpg", x=135, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageShield      = m5ui.M5Image(FLASH_IMG+"mm_shield_none.jpg", x=65, y=33, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageBanner      = m5ui.M5Image(FLASH_IMG+"mm_banner_delivery_suspend.jpg", x=40, y=145, rotation=0, scale_x=1, scale_y=1, parent=page1)
 
    # Labels on page 1
    labelBglValue    = m5ui.M5Label("--", x=140, y=90, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_48, parent=page1)
