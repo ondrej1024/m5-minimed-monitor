@@ -156,7 +156,7 @@ lastApMsg     = None
 runNtpsync        = False
 runTimeupdate     = False
 runPumpdataupdate = False
-wifi          = None
+wlan          = None
 
 # Fault ID mapping
 faultIdMapping = {
@@ -583,23 +583,23 @@ def read_config():
 def wlan_connect(wifissid, wifipass):
    # Try to connect to WIFI network
    print("connecting Wifi")
-   wlan = network.WLAN(network.STA_IF)
-   wlan.active(True)
-   wlan.connect(wifissid, wifipass)
+   w = network.WLAN(network.STA_IF)
+   w.active(True)
+   w.connect(wifissid, wifipass)
    ctimeout=0
-   while not wlan.isconnected():
+   while not w.isconnected():
       time.sleep_ms(1000)
       ctimeout += 1
       if ctimeout > 5:
          break
-   if not wlan.isconnected():
-      wlan.active(False)
+   if not w.isconnected():
+      w.active(False)
       print("Failed to connect to WIFI network %s\n" % (wifissid))
       # Start access point for configuration
       do_access_point(DEFAULT_NTP_SERVER,DEFAULT_TIME_ZONE,DEFAULT_PROXY_PORT)
    else:
-      print("Wifi connected (IP %s, GW %s, RSSI %d)" % (wlan.ifconfig()[0], wlan.ifconfig()[2], wlan.status("rssi")))
-   return wlan
+      print("Wifi connected (IP %s, GW %s, RSSI %d)" % (w.ifconfig()[0], w.ifconfig()[2], w.status("rssi")))
+   return w
 
 
 #################################################
@@ -810,27 +810,31 @@ def handle_timeupdate():
 #################################################
 
 def handle_devstatusupdate():
-
    global imagePower
    global imageWifi
+   global wlan
 
    # Show or hide power icon
    imagePower.set_flag(lv.obj.FLAG.HIDDEN, not Power.isCharging())
 
    # Set Wifi icon according to signal strength
-   rssi = wlan.status("rssi")
-   if rssi > -50:
-      bars = 4
-   elif rssi > -60:
-      bars = 3
-   elif rssi > -70:
-      bars = 2
-   elif rssi > -80:
-      bars = 1
+   if wlan.isconnected():
+      hidden = False
+      rssi = wlan.status("rssi")
+      if rssi > -50:
+         bars = 4
+      elif rssi > -60:
+         bars = 3
+      elif rssi > -70:
+         bars = 2
+      elif rssi > -80:
+         bars = 1
+      else:
+         bars = 0
+      imageWifi.set_image(FLASH_IMG+("icon_wifi%d.jpg"%bars))
+      imageWifi.set_flag(lv.obj.FLAG.HIDDEN,False)
    else:
-      bars = 0
-
-   imageWifi.set_image(FLASH_IMG+("icon_wifi%d.jpg"%bars))
+      imageWifi.set_flag(lv.obj.FLAG.HIDDEN,True)
 
 
 #################################################
@@ -1064,8 +1068,8 @@ def setup():
    imageSage        = m5ui.M5Image(FLASH_IMG+"mm_sage_unk.jpg", x=135, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
    imageShield      = m5ui.M5Image(FLASH_IMG+"mm_shield_none.jpg", x=65, y=33, rotation=0, scale_x=1, scale_y=1, parent=page1)
    imageBanner      = m5ui.M5Image(FLASH_IMG+"mm_banner_delivery_suspend.jpg", x=30, y=145, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imageWifi        = m5ui.M5Image(FLASH_IMG+"icon_wifi0.jpg", x=228, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imagePower       = m5ui.M5Image(FLASH_IMG+"icon-power.jpg", x=196, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageWifi        = m5ui.M5Image(FLASH_IMG+"icon_wifi0.jpg", x=222, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imagePower       = m5ui.M5Image(FLASH_IMG+"icon-power.jpg", x=193, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
 
    # Labels on page 1
    labelBglValue    = m5ui.M5Label("--", x=140, y=90, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_48, parent=page1)
@@ -1077,7 +1081,7 @@ def setup():
    labelSage        = m5ui.M5Label('', x=144, y=8, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_14, parent=page1)
 
    # Labels on page 2
-   labelScreen2Title     = m5ui.M5Label('In target range (last 24h)', x=9, y=0, text_c=0xffffff, font=lv.font_montserrat_24, parent=page2)
+   labelScreen2Title     = m5ui.M5Label('Time in range (last 24h)', x=9, y=0, text_c=0xffffff, font=lv.font_montserrat_24, parent=page2)
    labelAboveTarget      = m5ui.M5Label('Above target 180 mg/dl:', x=9, y=60, text_c=0xffc418, font=lv.font_montserrat_18, parent=page2)
    labelInTarget         = m5ui.M5Label('In target:', x=9, y=90, text_c=0x45db49, font=lv.font_montserrat_18, parent=page2)
    labelBelowTarget      = m5ui.M5Label('Below target 70 mg/dl:', x=9, y=119, text_c=0xff0000, font=lv.font_montserrat_18, parent=page2)
