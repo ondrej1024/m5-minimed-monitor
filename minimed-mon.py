@@ -100,7 +100,7 @@ FLASH_WAV = "/flash/res/audio/"
 SCREEN_WIDTH  = 320
 SCREEN_HEIGHT = 240
 
-SPEAKER_VOLUME = 180 # from 0 to 255
+SPEAKER_VOLUME = 180   # from 0 to 255
 
 TIMER0_PERIOD_S = 3600 # NTP time sync
 TIMER1_PERIOD_S = 10   # Screen time update
@@ -398,7 +398,7 @@ def web_page_config(ntpserver,timezone,proxyport):
             <tr style="vertical-align: top; background-color: rgb(230, 230, 255);"> \n \
             <td style="width: 300px;">NTP server address<br><input type="text" id="fntpserver" name="fntpserver" value=%s></td> \n \
             <tr style="vertical-align: top; background-color: rgb(230, 230, 255);"> \n \
-            <td style="width: 300px;">Time Zone (h)<br><input type="text" id="ftimezone" name="ftimezone" value=%s></td> \n \
+            <td style="width: 300px;font-weight: normal;"><b>Time Zone</b><br><input type="text" id="ftimezone1" name="ftimezone1" size=2 value=%s> hours <select id="ftimezone2" name="ftimezone2"><option value="1">ahead</option><option value="-1">behind</option></select> GMT</td> \n \
             </tbody></table><br> \n \
             <table style="text-align: left; width: 400px; background-color: white; font-family: Helvetica,Arial,sans-serif; font-weight: bold; font-size: 14px;" border="0" cellpadding="2" cellspacing="3"><tbody> \n \
             <tr style="font-size: 18px; background-color: lightgrey"> \n \
@@ -488,13 +488,15 @@ def do_access_point(ntpserver,timezone,proxyport):
          wifissid  = get_url_param(rurl, "fwifissid")
          wifipass  = get_url_param(rurl, "fwifipass")
          ntpserver = get_url_param(rurl, "fntpserver")
-         timezone  = get_url_param(rurl, "ftimezone")
+         timezone1 = get_url_param(rurl, "ftimezone1")
+         timezone2 = get_url_param(rurl, "ftimezone2")
          proxyaddr = get_url_param(rurl, "fproxyaddr")
          proxyport = get_url_param(rurl, "fproxyport")
          if wifissid  != None and wifissid  != "" and \
             wifipass  != None and wifipass  != "" and \
             ntpserver != None and ntpserver != "" and \
-            timezone  != None and timezone  != "" and \
+            timezone1 != None and timezone1 != "" and \
+            timezone2 != None and timezone2 != "" and \
             proxyaddr != None and proxyaddr != "" and \
             proxyport != None and proxyport != "":
 
@@ -521,7 +523,8 @@ def do_access_point(ntpserver,timezone,proxyport):
    time.sleep_ms(100)
 
    try:
-      nvs.set_i8('timezone', int(timezone))
+      timezone = int(timezone1) * int(timezone2)
+      nvs.set_i8('timezone', timezone)
    except:
       print("invalid time zone, saving default")
       nvs.set_i8('timezone', DEFAULT_TIME_ZONE)
