@@ -157,6 +157,7 @@ runNtpsync        = False
 runTimeupdate     = False
 runPumpdataupdate = False
 wlan          = None
+msgboxDelConf    = None
 
 # Fault ID mapping
 faultIdMapping = {
@@ -956,26 +957,26 @@ def btnA_wasPressed_event(state):
    page1.screen_load()
 
 def btnB_wasPressed_event(state):
-   global page1
+   global page2
    page2.screen_load()
 
 def btnC_wasPressed_event(state):
-   global page2
+   global page3, msgboxDelConf
+   if msgboxDelConf is not None:
+      msgboxDelConf.delete()
+      msgboxDelConf = None
    page3.screen_load()
 
-def btn0_event_handler(event_struct):
-   event = event_struct.code
-   print("btn0 event: %d" % event)
-   if event == lv.EVENT.RELEASED:
-      # delete NVRAM parameters
-      print("delete NVRAM parameters")
-      nvs = esp32.NVS("mmmon")
-      nvs.erase_key('wifissid')
-      nvs.erase_key('wifipass')
-      nvs.commit()
-      # Restart
-      print("restarting ...")
-      machine.reset()
+def delete_flash_config():
+   # delete NVRAM parameters
+   print("delete NVRAM parameters")
+   nvs = esp32.NVS("mmmon")
+   nvs.erase_key('wifissid')
+   nvs.erase_key('wifipass')
+   nvs.commit()
+   # Restart
+   print("restarting ...")
+   machine.reset()
 
 
 #################################################
@@ -984,12 +985,62 @@ def btn0_event_handler(event_struct):
 #
 #################################################
 
-def page_event_handler(event_struct):
-   event = event_struct.code
-   print("page event: %d" % event)
+def page_brightness(event):
    if event == lv.EVENT.PRESSED:
       M5.Lcd.setBrightness(100)
       timer3.init(mode=Timer.ONE_SHOT, period=TIMER3_PERIOD_S*1000, callback=timer3_cb)
+   return
+
+def btn_yes_event_handler(event_struct):
+    global msgboxDelConf
+    event = event_struct.code
+    if event == lv.EVENT.CLICKED and True:
+        #print("Clicked YES")
+        msgboxDelConf.delete()
+        msgboxDelConf = None
+        delete_flash_config()
+    return
+
+def btn_no_event_handler(event_struct):
+    global msgboxDelConf
+    event = event_struct.code
+    if event == lv.EVENT.CLICKED and True:
+        #print("Clicked NO")
+        msgboxDelConf.delete()
+        msgboxDelConf = None
+    return
+
+def page1_event_handler(event_struct):
+   event = event_struct.code
+   print("page1 event: %d" % event)
+   page_brightness(event)
+   return
+
+def page2_event_handler(event_struct):
+   event = event_struct.code
+   print("page2 event: %d" % event)
+   page_brightness(event)
+   return
+
+def page3_event_handler(event_struct):
+   global msgboxDelConf
+   event = event_struct.code
+   print("page3 event: %d" % event)
+   page_brightness(event)
+
+   # Handle delete button press
+   x = M5.Touch.getX()
+   y = M5.Touch.getY()
+   #print("x:%d, y:%d" % (x,y))
+   if x>SCREEN_WIDTH-40 and y>SCREEN_HEIGHT-40:
+      print("Pressed delete button")
+      if msgboxDelConf is None:
+         msgboxDelConf = m5ui.M5Msgbox(title="DELETE CONFIG", x=60, y=40, w=200, h=120, parent=page3)
+         lbl_box = msgboxDelConf.add_text("Are you sure ?")
+         btn_yes = msgboxDelConf.add_button(text="YES", option="footer")
+         btn_no  = msgboxDelConf.add_button(text="NO", option="footer")
+         btn_yes.add_event_cb(btn_yes_event_handler, lv.EVENT.ALL, None)
+         btn_no.add_event_cb(btn_no_event_handler, lv.EVENT.ALL, None)
    return
 
 
@@ -1113,8 +1164,7 @@ def setup():
    labelMyPort      = m5ui.M5Label(proxyport, x=143, y=173, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
 
    # Button on page 3
-   btn0 = m5ui.M5Button(text='Reset config', x=110, y=200, bg_c=0xff0000, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
-   btn0.add_event_cb(btn0_event_handler, lv.EVENT.RELEASED, None)
+   imageDelBtn      = m5ui.M5Image(FLASH_IMG+"btn-delete.jpg", x=280, y=200, rotation=0, scale_x=1, scale_y=1, parent=page3)
 
    # Init button event handlers
    BtnA.setCallback(type=BtnA.CB_TYPE.WAS_PRESSED, cb=btnA_wasPressed_event)
@@ -1139,9 +1189,9 @@ def setup():
    timer3 = Timer(3)
 
    # Init touch event detection for all pages
-   page1.add_event_cb(page_event_handler, lv.EVENT.PRESSED, None)
-   page2.add_event_cb(page_event_handler, lv.EVENT.PRESSED, None)
-   page3.add_event_cb(page_event_handler, lv.EVENT.PRESSED, None)
+   page1.add_event_cb(page1_event_handler, lv.EVENT.PRESSED, None)
+   page2.add_event_cb(page2_event_handler, lv.EVENT.PRESSED, None)
+   page3.add_event_cb(page3_event_handler, lv.EVENT.PRESSED, None)
 
    # Init time and date
    time.timezone(timezone)
