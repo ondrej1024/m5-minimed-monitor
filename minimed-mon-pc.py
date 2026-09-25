@@ -81,7 +81,6 @@ timezone  = DEFAULT_TIME_ZONE
 # API
 API_URL   = "carelink/nohistory"
 proxyaddr = "0.0.0.0" # Replace with your Carelink Python Client IP address
-proxyaddr = "192.168.1.100"
 proxyport = 8081
 
 # Gobal variables
@@ -437,7 +436,7 @@ def wait_ms(time_ms):
 
 # Create screen
 print("Create screen")
-s=M5Screen('res/icon_mmm.png')
+s=M5Screen('res/png/icon_mmm.png')
 scr1 = s.scr
 
 timerSch = timerSch()
@@ -446,13 +445,13 @@ speaker = speaker()
 
 # Load images on screen 1
 print("Create images")
-imageBattery     = M5Img("res/mm_batt_unk.png", x=6, y=0, parent=scr1)
-imageReservoir   = M5Img("res/mm_tank_unk.png", x=40, y=0, parent=scr1)
-imageSensorConn  = M5Img("res/mm_sensor_connection_nok.png", x=68, y=0, parent=scr1)
-imageDrop        = M5Img("res/mm_drop_unk.png", x=105, y=8, parent=scr1)
-imageSage        = M5Img("res/mm_sage_unk.png", x=135, y=0, parent=scr1)
-imageShield      = M5Img("res/mm_shield_none.png", x=65, y=33, parent=scr1)
-imageBanner      = M5Img("res/mm_banner_delivery_suspend.png", x=40, y=145, parent=scr1)
+imageBattery     = M5Img("res/png/mm_batt_unk.png", x=6, y=0, parent=scr1)
+imageReservoir   = M5Img("res/png/mm_tank_unk.png", x=40, y=0, parent=scr1)
+imageSensorConn  = M5Img("res/png/mm_sensor_connection_nok.png", x=68, y=0, parent=scr1)
+imageDrop        = M5Img("res/png/mm_drop_unk.png", x=105, y=8, parent=scr1)
+imageSage        = M5Img("res/png/mm_sage_unk.png", x=135, y=0, parent=scr1)
+imageShield      = M5Img("res/png/mm_shield_none.png", x=65, y=33, parent=scr1)
+imageBanner      = M5Img("res/png/mm_banner_delivery_suspend.png", x=40, y=145, parent=scr1)
 
 imageBanner.set_hidden(True)
 
@@ -533,34 +532,34 @@ def time_to_calib_progress(cfs,ttc,sst,cst):
    if (ttc == 255 or cst == "UNKNOWN") and not cfs: # unknown
       #print("unknown")
       # full blue circle, question mark
-      imageDrop.set_img_src("res/mm_drop_unk.png")
+      imageDrop.set_img_src("res/png/mm_drop_unk.png")
       imageDrop.set_pos(106, 8)
       lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x00cccc,0x00cccc)
    elif ttc >= 12: 
       # full green circle, white drop
-      imageDrop.set_img_src("res/mm_drop_white.png")
+      imageDrop.set_img_src("res/png/mm_drop_white.png")
       imageDrop.set_pos(105, 8)
       lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x33cc00,0x33cc00)
    elif ttc > 3:
       # decreasing green circle, white drop
-      imageDrop.set_img_src("res/mm_drop_white.png")
+      imageDrop.set_img_src("res/png/mm_drop_white.png")
       imageDrop.set_pos(105, 8)
       lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x33cc00,0x33cc00)
       lcd.arc(centerX, centerY, radius, thick, 0, endpos,0x000000,0x000000)
    elif ttc > 0:
       # decreasing red circle, white drop
-      imageDrop.set_img_src("res/mm_drop_white.png")
+      imageDrop.set_img_src("res/png/mm_drop_white.png")
       imageDrop.set_pos(105, 8)
       lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0xff0000,0xff0000)
       lcd.arc(centerX, centerY, radius, thick, 0, endpos,0x000000,0x000000)
    else:
       if sst == "CALIBRATION_REQUIRED":
          # no circle, red drop
-         imageDrop.set_img_src("res/mm_drop_red.png")
+         imageDrop.set_img_src("res/png/mm_drop_red.png")
          imageDrop.set_pos(100, 0)
       else:
          # no circle, white drop
-         imageDrop.set_img_src("res/mm_drop_white.png")
+         imageDrop.set_img_src("res/png/mm_drop_white.png")
          imageDrop.set_pos(105, 8)
       lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x000000,0x000000)
 
@@ -638,9 +637,9 @@ def handle_alarm(lastAlarm):
 
             # Play alarm sound
             if lastAlarm["type"] == "ALARM":
-               sndfile = "res/sound_alarm.wav"
+               sndfile = "res/audio/sound_alarm.wav"
             else:
-               sndfile = "res/sound_alert.wav"
+               sndfile = "res/audio/sound_alert.wav"
             speaker.playWAV(sndfile, rate=22000)
          lastAlarmId = lastAlarm["GUID"]
    except:
@@ -723,27 +722,27 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
          ##### Screen 1 #####
          
          if haveData:
-            imageBattery.set_img_src("res/mm_batt"+str(r.json()["pumpBatteryLevelPercent"])+".png")
-            imageReservoir.set_img_src("res/mm_tank"+str(reservoir_level(r.json()["reservoirRemainingUnits"]))+".png")
-            imageSage.set_img_src("res/mm_sage_"+sensor_age_icon(r.json()["sensorDurationHours"],r.json()["sensorState"])+".png")
+            imageBattery.set_img_src("res/png/mm_batt"+str(r.json()["pumpBatteryLevelPercent"])+".png")
+            imageReservoir.set_img_src("res/png/mm_tank"+str(reservoir_level(r.json()["reservoirRemainingUnits"]))+".png")
+            imageSage.set_img_src("res/png/mm_sage_"+sensor_age_icon(r.json()["sensorDurationHours"],r.json()["sensorState"])+".png")
             labelSage.set_text(sensor_age_text(r.json()["sensorDurationHours"]))
          else:
-            imageBattery.set_img_src("res/mm_batt_unk.png")
-            imageReservoir.set_img_src("res/mm_tank_unk.png")
-            imageSage.set_img_src("res/mm_sage_unk.png")
+            imageBattery.set_img_src("res/png/mm_batt_unk.png")
+            imageReservoir.set_img_src("res/png/mm_tank_unk.png")
+            imageSage.set_img_src("res/png/mm_sage_unk.png")
             labelSage.set_text("")
          
          if r.json()["conduitSensorInRange"]:
-            imageSensorConn.set_img_src("res/mm_sensor_connection_ok.png")
+            imageSensorConn.set_img_src("res/png/mm_sensor_connection_ok.png")
          else:
-            imageSensorConn.set_img_src("res/mm_sensor_connection_nok.png")
+            imageSensorConn.set_img_src("res/png/mm_sensor_connection_nok.png")
          
          time_to_calib_progress(r.json()["calFreeSensor"],r.json()["timeToNextCalibHours"],r.json()["sensorState"],r.json()["calibStatus"])
          
          if not haveData or r.json()["therapyAlgorithmState"]["autoModeShieldState"] == "FEATURE_OFF":
             imageShield.set_hidden(True)
          else:
-            imageShield.set_img_src("res/mm_shield_"+r.json()["lastSGTrend"].lower()+".png")
+            imageShield.set_img_src("res/png/mm_shield_"+r.json()["lastSGTrend"].lower()+".png")
             imageShield.set_hidden(False)
          lastSG = r.json()["lastSG"]["sg"]
          #print("lastSG: "+str(lastSG))
@@ -774,7 +773,7 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
 
       try:
          pumpBanner = r.json()["pumpBannerState"][0]["type"]
-         imageBanner.set_img_src("res/mm_banner_"+pumpBanner.lower()+".png")
+         imageBanner.set_img_src("res/png/mm_banner_"+pumpBanner.lower()+".png")
          imageBanner.set_hidden(False)
       except:
          imageBanner.set_hidden(True)
