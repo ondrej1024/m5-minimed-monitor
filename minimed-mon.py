@@ -136,6 +136,8 @@ labelBglValue = None
 labelBglUnit = None
 labelActInsValue = None
 labelActIns = None
+labelBasalRate = None
+labelBasalPatt = None
 labelTime = None
 labelLastData = None
 
@@ -690,18 +692,20 @@ def sensor_age_icon(rem_hours, sensor_state):
 def time_delta():
    global lastUpdateTm
    global dstDelta
-   
+   dt_bgc = 0x000000
+
    if lastUpdateTm > 0:
       dt_min = (time.time() - lastUpdateTm)//60
       if dt_min == 0:
          dt_txt = "Now"
       elif dt_min > 15:
-         dt_txt = "No data"
+         dt_txt = " No data "
+         dt_bgc = 0xFFAA00
       else:
          dt_txt = str(dt_min)+" min ago"
    else:
       dt_txt = "---"
-   return dt_txt
+   return (dt_txt,dt_bgc)
 
 
 #################################################
@@ -759,7 +763,7 @@ def handle_alarm(lastAlarm):
             msg = getFaultStr(lastAlarm["faultId"])
             if lastAlarmMsg != None:
                lastAlarmMsg.delete()
-            lastAlarmMsg = m5ui.M5Msgbox(title=msg, x=0, y=100, w=SCREEN_WIDTH, h=40, parent=page1)
+            lastAlarmMsg = m5ui.M5Msgbox(title=msg, x=0, y=100, w=SCREEN_WIDTH, h=45, parent=page1)
 
             # Play alarm sound
             if lastAlarm["type"] == "ALARM":
@@ -794,15 +798,18 @@ def handle_timeupdate():
    global dstDelta
 
    try:
-      # Update time on screen
+      # Update time of day
       print("update time on screen")
       now = time.time() + dstDelta*3600
       timestr = ("%02d:%02d") % (time.localtime(now)[3:5])
       labelTime.set_text(timestr)
       labelTime.align_to(page1, lv.ALIGN.TOP_RIGHT, 0, 0)
-      labelLastData.set_text(time_delta())
+
+      # Update last-data-received time
+      td = time_delta()
+      labelLastData.set_text(td[0])
+      labelLastData.set_bg_color(lv.color_hex(td[1]), 255, lv.PART.MAIN | lv.STATE.DEFAULT)
       labelLastData.align_to(page1, lv.ALIGN.BOTTOM_MID, 0, 0)
-      #align_text(labelLastData,"center",218)
    except:
       pass
 
@@ -907,14 +914,22 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
          lastSG = jdata["lastSG"]["sg"]
          labelBglValue.set_text(str(lastSG) if lastSG > 0 else "--")
          labelBglValue.align_to(page1, lv.ALIGN.CENTER, 0, 0)
-         #align_text(labelBglValue,"center",90)
          
          if haveData:
             labelActInsValue.set_text(str(round(jdata["activeInsulin"]["amount"],1))+" U")
+            try:
+               labelBasalRate.set_text(str(round(jdata["basal"]["basalRate"],1))+" U/hr")
+               labelBasalRate.set_flag(lv.obj.FLAG.HIDDEN, False)
+               labelBasalPatt.set_text(jdata["basal"]["activeBasalPattern"])
+               labelBasalPatt.set_flag(lv.obj.FLAG.HIDDEN, False)
+            except:
+               labelBasalRate.set_flag(lv.obj.FLAG.HIDDEN, True)
+               labelBasalPatt.set_flag(lv.obj.FLAG.HIDDEN, True)
          else:
             labelActInsValue.set_text("-- U")
+            labelBasalRate.set_flag(lv.obj.FLAG.HIDDEN, True)
+            labelBasalPatt.set_flag(lv.obj.FLAG.HIDDEN, True)
          labelActInsValue.align_to(page1, lv.ALIGN.TOP_RIGHT, 0, 173)
-         #align_text(labelActInsValue,"right",173)
       except:
          pass
       
@@ -926,7 +941,10 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
             if lastStatusMsg != None:
                lastStatusMsg.delete()
             status_txt = systemStatus.replace("_"," ")
-            lastStatusMsg = m5ui.M5Msgbox(title = status_txt, x=0, y=50, w=SCREEN_WIDTH, h=40, parent=page1)
+            systemStatusTimeRemaining = jdata["systemStatusTimeRemaining"]
+            if int(systemStatusTimeRemaining) > 0:
+               status_txt = "%s (%d min)" % (status_txt, int(systemStatusTimeRemaining))
+            lastStatusMsg = m5ui.M5Msgbox(title = status_txt, x=0, y=50, w=SCREEN_WIDTH, h=45, parent=page1)
       except:
          if lastStatusMsg != None:
             lastStatusMsg.delete()
@@ -1080,7 +1098,7 @@ def timer3_cb(t):
 #################################################
 
 def setup():
-   global page0, page1, page2, page3, imageBattery, imageReservoir, imageSensorConn, imageDrop, imageSage, imageShield, imageBanner, imageWifi, imagePower, labelBglValue, labelBglUnit, labelActInsValue, labelActIns, labelTime, labelLastData, labelSage, labelAboveTargetValue, labelInTargetValue, labelBelowTargetValue, labelAverageSgValue, timer0, timer1, timer2, timer3
+   global page0, page1, page2, page3, imageBattery, imageReservoir, imageSensorConn, imageDrop, imageSage, imageShield, imageBanner, imageWifi, imagePower, labelBglValue, labelBglUnit, labelActInsValue, labelActIns,  labelBasalRate, labelBasalPatt, labelTime, labelLastData, labelSage, labelAboveTargetValue, labelInTargetValue, labelBelowTargetValue, labelAverageSgValue, timer0, timer1, timer2, timer3
 
    global ntpserver
    global proxyaddr
@@ -1128,8 +1146,10 @@ def setup():
    # Labels on page 1
    labelBglValue    = m5ui.M5Label("--", x=140, y=90, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_48, parent=page1)
    labelBglUnit     = m5ui.M5Label("mg/dL", x=133, y=145, text_c=0xffffff, bg_c=0x89abeb, bg_opa=0, font=lv.font_montserrat_16, parent=page1)
-   labelActInsValue = m5ui.M5Label("-- U", x=274, y=163, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_24, parent=page1)
+   labelActInsValue = m5ui.M5Label("-- U", x=274, y=173, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_24, parent=page1)
    labelActIns      = m5ui.M5Label("Act Insulin", x=232, y=200, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_16, parent=page1)
+   labelBasalRate   = m5ui.M5Label("-- U/hr", x=0, y=173, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_24, parent=page1)
+   labelBasalPatt   = m5ui.M5Label("--", x=0, y=200, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_16, parent=page1)
    labelTime        = m5ui.M5Label("--:--", x=276, y=0, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_24, parent=page1)
    labelLastData    = m5ui.M5Label("--", x=150, y=211, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_24, parent=page1)
    labelSage        = m5ui.M5Label('', x=144, y=8, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_14, parent=page1)
