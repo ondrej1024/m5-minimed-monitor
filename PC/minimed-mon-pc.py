@@ -96,8 +96,8 @@ API_URL     = "carelink/nohistory"
 AP_SSID     = "M5_MINIMED_MON"
 AP_ADDR     = "192.168.4.1"
 
-FLASH_IMG = "/flash/res/img/"
-FLASH_WAV = "/flash/res/audio/"
+FLASH_IMG = "res/png/"
+FLASH_WAV = "res/audio/"
 
 SCREEN_WIDTH  = 320
 SCREEN_HEIGHT = 240
@@ -373,6 +373,7 @@ faultIdTable = {
 }
 
 
+'''
 #################################################
 #
 # WIFI Access Point functions
@@ -553,6 +554,7 @@ def do_access_point(ntpserver,timezone,proxyport):
    time.sleep_ms(8000)
    machine.reset()
 
+'''
 
 #################################################
 #
@@ -649,34 +651,34 @@ def time_to_calib_progress(cfs,ttc,sst,cst):
    if (ttc == 255 or cst == "UNKNOWN") and not cfs: # unknown
       #print("unknown")
       # full blue circle, question mark
-      imageDrop.set_image(FLASH_IMG+"mm_drop_unk.jpg")
+      imageDrop.set_image(FLASH_IMG+"mm_drop_unk.png")
       imageDrop.set_pos(106, 8)
       #lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x00cccc,0x00cccc)
    elif ttc >= 12:
       # full green circle, white drop
-      imageDrop.set_image(FLASH_IMG+"mm_drop_white.jpg")
+      imageDrop.set_image(FLASH_IMG+"mm_drop_white.png")
       imageDrop.set_pos(105, 8)
       #lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x33cc00,0x33cc00)
    elif ttc > 3:
       # decreasing green circle, white drop
-      imageDrop.set_image(FLASH_IMG+"mm_drop_white.jpg")
+      imageDrop.set_image(FLASH_IMG+"mm_drop_white.png")
       imageDrop.set_pos(105, 8)
       #lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x33cc00,0x33cc00)
       #lcd.arc(centerX, centerY, radius, thick, 0, endpos,0x000000,0x000000)
    elif ttc > 0:
       # decreasing red circle, white drop
-      imageDrop.set_image(FLASH_IMG+"mm_drop_white.jpg")
+      imageDrop.set_image(FLASH_IMG+"mm_drop_white.png")
       imageDrop.set_pos(105, 8)
       #lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0xff0000,0xff0000)
       #lcd.arc(centerX, centerY, radius, thick, 0, endpos,0x000000,0x000000)
    else:
       if sst == "CALIBRATION_REQUIRED":
          # no circle, red drop
-         imageDrop.set_image(FLASH_IMG+"mm_drop_red.jpg")
+         imageDrop.set_image(FLASH_IMG+"mm_drop_red.png")
          imageDrop.set_pos(100, 0)
       else:
          # no circle, white drop
-         imageDrop.set_image(FLASH_IMG+"mm_drop_white.jpg")
+         imageDrop.set_image(FLASH_IMG+"mm_drop_white.png")
          imageDrop.set_pos(105, 8)
       #lcd.arc(centerX, centerY, radius, thick, 0, endposfull,0x000000,0x000000)
 
@@ -815,7 +817,7 @@ def handle_timeupdate():
       print("update time on screen")
       now = time.time()
       if sys.platform == "esp32":
-            now += dstDelta*3600
+         now += dstDelta*3600
       timestr = ("%02d:%02d") % (time.localtime(now)[3:5])
       labelTime.set_text(timestr)
       labelTime.align_to(page1, lv.ALIGN.TOP_RIGHT, 0, 0)
@@ -858,7 +860,7 @@ def handle_devstatusupdate():
             bars = 1
          else:
             bars = 0
-         imageWifi.set_image(FLASH_IMG+("icon_wifi%d.jpg"%bars))
+         imageWifi.set_image(FLASH_IMG+("icon_wifi%d.png"%bars))
          imageWifi.set_flag(lv.obj.FLAG.HIDDEN,False)
       else:
          imageWifi.set_flag(lv.obj.FLAG.HIDDEN,True)
@@ -892,6 +894,7 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
    if r != None and r.status_code == 200 and jdata != "":
       try:
          lastUpdateTm = int(jdata["lastConduitUpdateServerDateTime"]//1000)
+
          # Check for DST
          dstDelta = 1 if jdata["clientTimeZoneName"].lower().find("summer")>-1 else 0
          print("dstDelta: %d" % dstDelta)
@@ -905,27 +908,27 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
          ##### Screen 1 #####
          
          if haveData:
-            imageBattery.set_image(FLASH_IMG+"mm_batt"+str(jdata["pumpBatteryLevelPercent"])+".jpg")
-            imageReservoir.set_image(FLASH_IMG+"mm_tank"+str(reservoir_level(jdata["reservoirRemainingUnits"]))+".jpg")
-            imageSage.set_image(FLASH_IMG+"mm_sage_"+sensor_age_icon(jdata["sensorDurationHours"],jdata["sensorState"])+".jpg")
+            imageBattery.set_image(FLASH_IMG+"mm_batt"+str(jdata["pumpBatteryLevelPercent"])+".png")
+            imageReservoir.set_image(FLASH_IMG+"mm_tank"+str(reservoir_level(jdata["reservoirRemainingUnits"]))+".png")
+            imageSage.set_image(FLASH_IMG+"mm_sage_"+sensor_age_icon(jdata["sensorDurationHours"],jdata["sensorState"])+".png")
             labelSage.set_text(sensor_age_text(jdata["sensorDurationHours"]))
          else:
-            imageBattery.set_image(FLASH_IMG+"mm_batt_unk.jpg")
-            imageReservoir.set_image(FLASH_IMG+"mm_tank_unk.jpg")
-            imageSage.set_image(FLASH_IMG+"mm_sage_unk.jpg")
+            imageBattery.set_image(FLASH_IMG+"mm_batt_unk.png")
+            imageReservoir.set_image(FLASH_IMG+"mm_tank_unk.png")
+            imageSage.set_image(FLASH_IMG+"mm_sage_unk.png")
             labelSage.set_text("")
          
          if jdata["conduitSensorInRange"]:
-            imageSensorConn.set_image(FLASH_IMG+"mm_sensor_connection_ok.jpg")
+            imageSensorConn.set_image(FLASH_IMG+"mm_sensor_connection_ok.png")
          else:
-            imageSensorConn.set_image(FLASH_IMG+"mm_sensor_connection_nok.jpg")
+            imageSensorConn.set_image(FLASH_IMG+"mm_sensor_connection_nok.png")
          
          time_to_calib_progress(jdata["calFreeSensor"],jdata["timeToNextCalibHours"],jdata["sensorState"],jdata["calibStatus"])
 
          if not haveData or jdata["therapyAlgorithmState"]["autoModeShieldState"] == "FEATURE_OFF":
             imageShield.set_flag(lv.obj.FLAG.HIDDEN, True)
          else:
-            imageShield.set_image(FLASH_IMG+"mm_shield_"+jdata["lastSGTrend"].lower()+".jpg")
+            imageShield.set_image(FLASH_IMG+"mm_shield_"+jdata["lastSGTrend"].lower()+".png")
             imageShield.set_flag(lv.obj.FLAG.HIDDEN, False)
          lastSG = jdata["lastSG"]["sg"]
          labelBglValue.set_text(str(lastSG) if lastSG > 0 else "--")
@@ -948,7 +951,7 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
          labelActInsValue.align_to(page1, lv.ALIGN.TOP_RIGHT, 0, 173)
       except:
          pass
-      
+
       try:
          systemStatus = jdata["systemStatusMessage"]
          if systemStatus == "NO_ERROR_MESSAGE" or systemStatus == None:
@@ -968,7 +971,7 @@ def handle_pumpdataupdate(proxyaddr, proxyport):
 
       try:
          pumpBanner = jdata["pumpBannerState"][0]["type"]
-         imageBanner.set_image(FLASH_IMG+"mm_banner_"+pumpBanner.lower()+".jpg")
+         imageBanner.set_image(FLASH_IMG+"mm_banner_"+pumpBanner.lower()+".png")
          imageBanner.set_flag(lv.obj.FLAG.HIDDEN, False)
       except:
          imageBanner.set_flag(lv.obj.FLAG.HIDDEN, True)
@@ -1130,11 +1133,11 @@ def setup():
    Speaker.setVolume(SPEAKER_VOLUME)
 
    # Create and load initial page
-   page0 = m5ui.M5Page(bg_c=0x000000)
-   m5ui.M5Label("M5 Minimed Mon "+VERSION, x=0, y=0, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_24, parent=page0)
-   page0.screen_load()
-   time.sleep_ms(1000)
-  
+   #page0 = m5ui.M5Page(bg_c=0x000000)
+   #m5ui.M5Label("M5 Minimed Mon "+VERSION, x=0, y=0, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_24, parent=page0)
+   #page0.screen_load()
+   #time.sleep_ms(1000)
+
    # Read config from EEPROM
    wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone = read_config()
    print("wifissid: %s, wifipass: %s, proxyaddr: %s, proxyport: %s, ntpserver: %s, timezone: %s\n" % (wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone))
@@ -1142,22 +1145,23 @@ def setup():
    # Wifi connection
    wlan = wlan_connect(wifissid, wifipass)
 
+
    # Create pages
    page1 = m5ui.M5Page(bg_c=0x000000)
-   page2 = m5ui.M5Page(bg_c=0x000000)
-   page3 = m5ui.M5Page(bg_c=0x000000)
+   #page2 = m5ui.M5Page(bg_c=0x000000)
+   #page3 = m5ui.M5Page(bg_c=0x000000)
    M5.Lcd.setBrightness(50)
 
    # Images on page 1
-   imageBattery     = m5ui.M5Image(FLASH_IMG+"mm_batt_unk.jpg", x=6, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imageReservoir   = m5ui.M5Image(FLASH_IMG+"mm_tank_unk.jpg", x=40, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imageSensorConn  = m5ui.M5Image(FLASH_IMG+"mm_sensor_connection_nok.jpg", x=68, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imageDrop        = m5ui.M5Image(FLASH_IMG+"mm_drop_unk.jpg", x=105, y=8, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imageSage        = m5ui.M5Image(FLASH_IMG+"mm_sage_unk.jpg", x=135, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imageShield      = m5ui.M5Image(FLASH_IMG+"mm_shield_none.jpg", x=65, y=33, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imageBanner      = m5ui.M5Image(FLASH_IMG+"mm_banner_delivery_suspend.jpg", x=30, y=145, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imageWifi        = m5ui.M5Image(FLASH_IMG+"icon_wifi0.jpg", x=222, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
-   imagePower       = m5ui.M5Image(FLASH_IMG+"icon-power.jpg", x=193, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageBattery     = m5ui.M5Image(FLASH_IMG+"mm_batt_unk.png", x=6, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageReservoir   = m5ui.M5Image(FLASH_IMG+"mm_tank_unk.png", x=40, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageSensorConn  = m5ui.M5Image(FLASH_IMG+"mm_sensor_connection_nok.png", x=68, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageDrop        = m5ui.M5Image(FLASH_IMG+"mm_drop_unk.png", x=105, y=8, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageSage        = m5ui.M5Image(FLASH_IMG+"mm_sage_unk.png", x=135, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageShield      = m5ui.M5Image(FLASH_IMG+"mm_shield_none.png", x=65, y=33, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageBanner      = m5ui.M5Image(FLASH_IMG+"mm_banner_delivery_suspend.png", x=30, y=145, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imageWifi        = m5ui.M5Image(FLASH_IMG+"icon_wifi0.png", x=222, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
+   imagePower       = m5ui.M5Image(FLASH_IMG+"icon-power.png", x=193, y=0, rotation=0, scale_x=1, scale_y=1, parent=page1)
 
    # Labels on page 1
    labelBglValue    = m5ui.M5Label("--", x=140, y=90, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_48, parent=page1)
@@ -1169,8 +1173,9 @@ def setup():
    labelBasalPatt   = m5ui.M5Label("--", x=0, y=200, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_16, parent=page1)
    labelTime        = m5ui.M5Label("--:--", x=276, y=0, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_24, parent=page1)
    labelLastData    = m5ui.M5Label("--", x=150, y=211, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_24, parent=page1)
-   labelSage        = m5ui.M5Label('', x=144, y=8, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_14, parent=page1)
+   labelSage        = m5ui.M5Label('', x=144, y=10, text_c=0xffffff, bg_c=0xffffff, bg_opa=0, font=lv.font_montserrat_14, parent=page1)
 
+   '''
    # Labels on page 2
    labelScreen2Title     = m5ui.M5Label('Time in range (last 24h)', x=9, y=0, text_c=0xffffff, font=lv.font_montserrat_24, parent=page2)
    labelAboveTarget      = m5ui.M5Label('Above target 180 mg/dl:', x=9, y=60, text_c=0xffc418, font=lv.font_montserrat_18, parent=page2)
@@ -1204,12 +1209,13 @@ def setup():
    labelMyPort      = m5ui.M5Label(proxyport, x=143, y=173, text_c=0xffffff, font=lv.font_montserrat_14, parent=page3)
 
    # Button on page 3
-   imageDelBtn      = m5ui.M5Image(FLASH_IMG+"btn-delete.jpg", x=280, y=200, rotation=0, scale_x=1, scale_y=1, parent=page3)
+   imageDelBtn      = m5ui.M5Image(FLASH_IMG+"btn-delete.png", x=280, y=200, rotation=0, scale_x=1, scale_y=1, parent=page3)
 
    # Init button event handlers
    BtnA.setCallback(type=BtnA.CB_TYPE.WAS_PRESSED, cb=btnA_wasPressed_event)
    BtnB.setCallback(type=BtnB.CB_TYPE.WAS_PRESSED, cb=btnB_wasPressed_event)
    BtnC.setCallback(type=BtnC.CB_TYPE.WAS_PRESSED, cb=btnC_wasPressed_event)
+   '''
 
    # Init timers
 
@@ -1228,10 +1234,12 @@ def setup():
    # Oneshot timer: reset screen brightness
    timer3 = Timer(3)
 
+   '''
    # Init touch event detection for all pages
    page1.add_event_cb(page1_event_handler, lv.EVENT.PRESSED, None)
    page2.add_event_cb(page2_event_handler, lv.EVENT.PRESSED, None)
    page3.add_event_cb(page3_event_handler, lv.EVENT.PRESSED, None)
+   '''
 
    # Init time and date
    if timezone != None:
