@@ -91,6 +91,8 @@ DEFAULT_NTP_SERVER = "pool.ntp.org"
 DEFAULT_TIME_ZONE  = 1
 DEFAULT_PROXY_PORT = 8081
 
+MY_PROXY_ADDR = "0.0.0.0" # Replace with your Carelink Python Client IP address
+
 # Access point parameters
 API_URL     = "carelink/nohistory"
 AP_SSID     = "M5_MINIMED_MON"
@@ -584,7 +586,7 @@ def read_config():
    else:
       wifissid = None
       wifipass = None
-      proxyaddr = "192.168.1.100"
+      proxyaddr = MY_PROXY_ADDR
       proxyport = DEFAULT_PROXY_PORT
       ntpserver = None
       timezone  = None

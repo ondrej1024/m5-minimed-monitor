@@ -111,17 +111,17 @@ There is also an experimental version of the Minimed Monitor which runs on a PC.
 
 
 
-To run this program you need Python 3 installed on your PC. You can start the program from the console typing the following command: 
+To run this program you need Python 3 installed on your PC. You can start the program on the terminal from inside the `PC/` subfolder, typing the following commands: 
 
 ```
+$ cd PC
 $ python3 minimed-mon-pc.py
 ```
 
-Be sure to modify the following lines in `minimed-mon-pc.py` with the IP address where your Carelink Python Client is running:
+Be sure to modify the following line in `minimed-mon-pc.py` with the IP address where your Carelink Python Client is running:
 
 ```
-proxyaddr = "0.0.0.0" # Replace with your Carelink Python Client IP address
-proxyport = 8081 
+MY_PROXY_ADDR = "0.0.0.0" # Replace with your Carelink Python Client IP address
 ```
 
 
