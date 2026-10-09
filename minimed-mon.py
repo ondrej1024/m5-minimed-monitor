@@ -84,7 +84,7 @@ else:
 #
 #################################################
 
-VERSION = "2.0.beta"
+VERSION = "2.0"
 
 # Default configuration parameters
 DEFAULT_NTP_SERVER = "pool.ntp.org"
