@@ -84,7 +84,7 @@ else:
 #
 #################################################
 
-VERSION = "2.0"
+VERSION = "2.0.1"
 
 # Default configuration parameters
 DEFAULT_NTP_SERVER = "pool.ntp.org"
@@ -323,7 +323,7 @@ faultIdTable = {
    "062": "New Notification Received From Pump",
    "066": "No Reservoir Detected During Infusion Set Change",
    "069": "Loading Incomplete During Infusion Set Change",
-   #"070": "Incomplete Fill Cannula Step"
+   "070": "Incomplete Fill Cannula Step"
    "073": "Replace Pump Battery Now",
    "077": "Pump Settings Error. Delivery Stopped",
    "084": "Pump Battery Removed. Replace Battery",
@@ -744,7 +744,7 @@ def convert_datetimestr_to_epoch(datetimestr):
 
 def getFaultStr(faultId):
    try:
-      faultStr = faultIdTable[faultIdMapping[faultId]]
+      faultStr = faultIdTable[faultIdMapping[faultId.zfill(3)]]
    except KeyError:
       faultStr = "Unknow error code %s" % faultId
    print("faultStr = %s" % faultStr)
