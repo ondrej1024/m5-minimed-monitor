@@ -39,6 +39,7 @@
 #    11/02/2025 - Adapt alarm handling to new data format
 #    31/03/2025 - Fix regression bug in DST handling
 #    01/09/2026 - Porting to UIFlow2
+#    02/11/2026 - Improve initial device configuration procedure
 #
 #
 #  Copyright 2021-2026, Ondrej Wisniewski
@@ -84,7 +85,7 @@ else:
 #
 #################################################
 
-VERSION = "2.0.1"
+VERSION = "2.1"
 
 # Default configuration parameters
 DEFAULT_NTP_SERVER = "pool.ntp.org"
@@ -157,6 +158,7 @@ lastAlarmMsg  = None
 lastErrorMsg  = None
 lastStatusMsg = None
 lastApMsg     = None
+lastApImg     = None
 runNtpsync        = False
 runTimeupdate     = False
 runPumpdataupdate = False
@@ -323,7 +325,7 @@ faultIdTable = {
    "062": "New Notification Received From Pump",
    "066": "No Reservoir Detected During Infusion Set Change",
    "069": "Loading Incomplete During Infusion Set Change",
-   "070": "Incomplete Fill Cannula Step"
+   "070": "Incomplete Fill Cannula Step",
    "073": "Replace Pump Battery Now",
    "077": "Pump Settings Error. Delivery Stopped",
    "084": "Pump Battery Removed. Replace Battery",
@@ -379,7 +381,11 @@ faultIdTable = {
 #
 #################################################
 
-def web_page_config(ntpserver,timezone,proxyport):
+def web_page_config(ntpserver,timezone,proxyport,ssidlist):
+   ssidhtml = ""
+   for ssid in ssidlist:
+      ssidhtml = ssidhtml + ("<option value=\"%s\">%s (%d)</option>" % (ssid[0],ssid[0],ssid[1]))
+
    html =  '<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd"> \n \
             <html><head><title>M5 Minimed Mon</title></head> \n \
             <body><table style="text-align: left; width: 400px; background-color: #2196F3; font-family: Helvetica,Arial,sans-serif; font-weight: bold; color: white;" border="0" cellpadding="2" cellspacing="2"> \n \
@@ -392,7 +398,7 @@ def web_page_config(ntpserver,timezone,proxyport):
             <tr style="font-size: 18px; background-color: lightgrey"> \n \
             <td style="width: 200px;">Wifi parameters</td> \n \
             <tr style="vertical-align: top; background-color: rgb(230, 230, 255);"> \n \
-            <td style="width: 300px;">SSID<br><input type="text" id="fwifissid" name="fwifissid"></td> \n \
+            <td style="width: 300px;">SSID<br><select id="fwifissid" name="fwifissid">%s</select></td> \n \
             <tr style="vertical-align: top; background-color: rgb(230, 230, 255);"> \n \
             <td style="width: 300px;">Password<br><input type="text" id="fwifipass" name="fwifipass"></td> \n \
             </tbody></table><br> \n \
@@ -413,7 +419,7 @@ def web_page_config(ntpserver,timezone,proxyport):
             <td style="width: 300px;">Port<br><input type="text" id="fproxyport" name="fproxyport" value=%s></td> \n \
             </tbody></table><br> \n \
             <input type="submit" value="Save"> \n \
-            </form></body></html>' % (ntpserver,timezone,proxyport)
+            </form></body></html>' % (ssidhtml,ntpserver,timezone,proxyport)
    return html
 
 
@@ -440,33 +446,52 @@ def get_url_param(url,param):
    return value
 
 
-def do_ap_msg(msg):
-   global lastApMsg
+def do_ap_msg(msg,img=None):
+   global lastApMsg,lastApImg
    if lastApMsg != None:
       lastApMsg.delete()
       lastApMsg = None
+   if lastApImg != None:
+      lastApImg.delete()
+      lastApImg = None
+   # Show message
    if msg:
-      lastApMsg = m5ui.M5Msgbox(title=msg, x=0, y=100, w=SCREEN_WIDTH, h=50, parent=page0)
-      #lastApMsg.set_text(msg)
-      sndfile = FLASH_WAV+"sound_alert.wav"
-      Speaker.playWavFile(sndfile)
+      lastApMsg = m5ui.M5Msgbox(title=msg, x=0, y=40, w=SCREEN_WIDTH, h=50, parent=page0)
+   # Show QR code
+   if img:
+      lastApImg = m5ui.M5Image(FLASH_IMG+img, x=90, y=100, rotation=0, scale_x=1, scale_y=1, parent=page0)
+   # Play sound
+   sndfile = FLASH_WAV+"sound_alert.wav"
+   Speaker.playWavFile(sndfile)
 
 
 def do_access_point(ntpserver,timezone,proxyport):
+   # Scan for available networks
+   ssidlist = []
+   ap = network.WLAN(network.STA_IF)
+   ap.active(True)
+   netlist = ap.scan()
+   ap.active(False)
+   print("Found %d available networks" % len(netlist))
+   if len(netlist)>0:
+      for net in netlist:
+         ssidlist.append((net[0].decode(),net[3]))
+   else:
+      ssidlist = ("no network found", 0)
    # Start access point
    ap = network.WLAN(network.AP_IF)
    ap.active(True)
    ap.config(essid=AP_SSID)
    ap.config(authmode=3, password='123456789')
    ap.config(max_clients=1)
-   do_ap_msg("Device configuration needed\nConnect to WIFI network\n%s" %(AP_SSID))
+   do_ap_msg("Device configuration needed\nConnect to network %s" %(AP_SSID), "qrcode-apnet.png")
 
    # Wait for client to connect
    while ap.isconnected() == False:
        pass
-   do_ap_msg("WIFI connection established\nLoad address %s in web browser" % (AP_ADDR))
+   do_ap_msg("WIFI connection established\nLoad address %s in web browser" % (AP_ADDR), "qrcode-apurl.png")
 
-   # Get WIFI credentials via Web GUI
+   # Get device parameters via Web GUI
    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
    s.bind((AP_ADDR, 80))
    s.listen(5)
@@ -511,7 +536,7 @@ def do_access_point(ntpserver,timezone,proxyport):
             break
 
       # Send setup page
-      conn.sendall(web_page_config(ntpserver,timezone,proxyport))
+      conn.sendall(web_page_config(ntpserver,timezone,proxyport,ssidlist))
       conn.close()
 
    # Write config data to EEPROM
@@ -547,7 +572,7 @@ def do_access_point(ntpserver,timezone,proxyport):
    nvs.commit()
    print("New configuration parameters stored in EEPROM\n")
    print("wifissid: %s, wifipass: %s, proxyaddr: %s, proxyport: %s, ntpserver: %s, timezone: %s\n" % (wifissid,wifipass,proxyaddr,proxyport,ntpserver,timezone))
-   do_ap_msg("New configuration parameters stored in EEPROM\nResetting device ...")
+   do_ap_msg("New configuration parameters stored in EEPROM\nResetting device ...", None)
 
    # Reset device
    time.sleep_ms(8000)
